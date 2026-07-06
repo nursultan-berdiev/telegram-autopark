@@ -1,0 +1,10 @@
+Миграции БД (Alembic).
+
+Создать миграцию по изменениям моделей:
+    alembic revision --autogenerate -m "описание"
+
+Применить миграции:
+    alembic upgrade head
+
+Откатить на шаг:
+    alembic downgrade -1
