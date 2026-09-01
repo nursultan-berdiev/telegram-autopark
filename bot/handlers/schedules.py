@@ -3,16 +3,18 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.callbacks import ScheduleCB
-from bot.db.models import Driver, SchedulePeriod
+from bot.db.models import Driver, PaymentSchedule, SchedulePeriod
 from bot.filters import IsAdmin
 from bot.keyboards.admin import BTN_SCHEDULES, admin_menu
 from bot.keyboards.schedules import drivers_list_kb, period_kb, start_date_kb
+from bot.scheduler import send_daily_reminders
 from bot.services import drivers as drivers_service
 from bot.services import schedules as sched_service
 from bot.states.schedule import SetSchedule
@@ -20,6 +22,26 @@ from bot.states.schedule import SetSchedule
 router = Router(name="schedules")
 router.message.filter(IsAdmin)
 router.callback_query.filter(IsAdmin)
+
+
+@router.message(Command("remind_now"))
+async def remind_now(message: Message, command: CommandObject, bot: Bot) -> None:
+    """Разовая рассылка напоминаний прямо сейчас (не дожидаясь REMINDER_HOUR).
+
+    `/remind_now force` — игнорировать анти-спам «раз в день»: иначе повторный
+    прогон за тот же день ничего не отправит, и проверить нечего.
+    """
+    force = (command.args or "").strip().lower() == "force"
+    result = await send_daily_reminders(bot, force=force)
+    await message.answer(
+        "Рассылка выполнена"
+        + (" (force: анти-спам проигнорирован)" if force else "")
+        + f".\nНапоминаний водителям: {result['drivers']}\n"
+        f"Сводок владельцу: {result['owners']}\n\n"
+        "Если ноль — значит сегодня напоминать некому "
+        "(нет активных графиков со сроком сегодня/завтра или просрочкой), "
+        "либо водителям уже писали сегодня — тогда попробуйте /remind_now force."
+    )
 
 
 def _today_utc() -> datetime:
@@ -164,7 +186,29 @@ async def _finish(
     await message.answer(
         "✅ График сохранён:\n"
         f"Периодичность: {sched_service.period_label(period, schedule.interval_days)}\n"
-        f"Сумма: {schedule.amount}\n"
-        f"Первый платёж: {schedule.next_due_date:%d.%m.%Y}",
+        f"Сумма: {sched_service.fmt_money(schedule.amount)}\n"
+        f"{_due_line(schedule)}",
         reply_markup=admin_menu(),
+    )
+
+
+def _due_line(schedule: PaymentSchedule) -> str:
+    """Состояние платежа сразу после сохранения графика.
+
+    Дату первого платежа задают и задним числом — так заводят водителя, который
+    уже должен. Раньше бот в обоих случаях писал просто «Первый платёж: дата», и
+    владелец не видел, что человек уже в просрочке.
+    """
+    st = sched_service.schedule_status(schedule)
+    if not st.is_overdue:
+        return f"Следующий платёж: {st.next_due_date:%d.%m.%Y}"
+    if st.overdue_days < 1:
+        return (
+            f"Первый платёж: {st.next_due_date:%d.%m.%Y}\n"
+            f"📅 Срок сегодня. К оплате: {sched_service.fmt_money(st.debt_now)}"
+        )
+    return (
+        f"Первый платёж: {st.next_due_date:%d.%m.%Y}\n"
+        f"⚠️ Платёж просрочен на {st.overdue_days} дн. "
+        f"К оплате: {sched_service.fmt_money(st.debt_now)}"
     )

@@ -35,6 +35,8 @@ async def create_payment(
     receipt_path: str | None,
     receipt_hash: str,
     recognized: RecognizedReceipt,
+    receipt_kind: str = "photo",
+    commit: bool = True,
 ) -> Payment:
     payment = Payment(
         driver_id=driver_id,
@@ -44,6 +46,7 @@ async def create_payment(
         receipt_file_id=receipt_file_id,
         receipt_path=receipt_path,
         receipt_hash=receipt_hash,
+        receipt_kind=receipt_kind,
         recognized_data=json.dumps(
             {
                 "readable": recognized.readable,
@@ -57,7 +60,11 @@ async def create_payment(
         status=PaymentStatus.confirmed,
     )
     session.add(payment)
-    await session.commit()
+    # commit=False — когда вызывающий кладёт платёж и график одной транзакцией.
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
     await session.refresh(payment)
     return payment
 

@@ -20,6 +20,7 @@ def test_all_routers_assembled():
         "common",
         "registration",
         "new_driver",
+        "drivers",
         "cars",
         "schedules",
         "payments",

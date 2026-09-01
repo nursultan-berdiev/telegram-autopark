@@ -6,6 +6,8 @@
 """
 from __future__ import annotations
 
+import logging
+
 from aiogram import Router
 from aiogram.filters import CommandStart
 from aiogram.types import Message
@@ -15,6 +17,7 @@ from bot.keyboards.admin import admin_menu
 from bot.keyboards.driver_menu import driver_menu
 from bot.middlewares.role import Role
 
+logger = logging.getLogger(__name__)
 router = Router(name="start")
 
 
@@ -36,6 +39,15 @@ async def start(message: Message, role: Role, driver: Driver | None) -> None:
         )
     else:
         # Гость без приглашения — нейтральный отказ, без раскрытия деталей.
+        # Обращение логируем: так владелец видит, кто стучится, и может взять
+        # user_id для ADMIN_IDS при первичной настройке.
+        user = message.from_user
+        logger.info(
+            "Обращение без доступа: user_id=%s username=@%s name=%s",
+            user.id,
+            user.username,
+            user.full_name,
+        )
         await message.answer(
             "У вас нет доступа к этому боту. "
             "Обратитесь к владельцу автопарка за приглашением."

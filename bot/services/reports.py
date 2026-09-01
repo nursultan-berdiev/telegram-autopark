@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from bot.db.models import Car, Driver, Payment, PaymentSchedule
+from bot.services.schedules import due_summary, fmt_money, schedule_status
 
 
 @dataclass
@@ -29,8 +31,14 @@ class CarTotal:
 class UpcomingItem:
     name: str
     car_plate: str
-    amount: float
-    next_due: object  # datetime
+    amount: float  # сумма за период
+    next_due: datetime  # крайний срок текущего периода
+    remaining_current: float = 0.0  # сколько ещё до закрытия текущего периода
+    debt_now: float = 0.0  # долг на момент запроса (0, если не просрочен)
+    overdue_periods: int = 0
+    overdue_days: int = 0
+    is_overdue: bool = False
+    summary: str = ""  # готовая человекочитаемая сводка состояния
 
 
 async def cars_with_drivers(session: AsyncSession) -> list[Car]:
@@ -41,8 +49,14 @@ async def cars_with_drivers(session: AsyncSession) -> list[Car]:
     return list(result.all())
 
 
-async def upcoming_payments(session: AsyncSession) -> list[UpcomingItem]:
-    """Водители с активным графиком, отсортированные по ближайшей дате (FR-RPT-2)."""
+async def upcoming_payments(
+    session: AsyncSession, now: datetime | None = None
+) -> list[UpcomingItem]:
+    """Водители с активным графиком, отсортированные по ближайшей дате (FR-RPT-2).
+
+    Самые просроченные (с самой ранней датой) идут первыми. По каждому водителю
+    считается статус: просрочка (дни/периоды), долг и остаток текущего периода.
+    """
     rows = await session.execute(
         select(PaymentSchedule, Driver, Car)
         .join(Driver, PaymentSchedule.driver_id == Driver.id)
@@ -52,12 +66,19 @@ async def upcoming_payments(session: AsyncSession) -> list[UpcomingItem]:
     )
     items: list[UpcomingItem] = []
     for schedule, driver, car in rows.all():
+        st = schedule_status(schedule, now)
         items.append(
             UpcomingItem(
                 name=driver.full_name,
                 car_plate=car.plate if car else "—",
-                amount=float(schedule.amount),
-                next_due=schedule.next_due_date,
+                amount=float(st.amount),
+                next_due=st.next_due_date,
+                remaining_current=float(st.remaining_current),
+                debt_now=float(st.debt_now),
+                overdue_periods=st.overdue_periods,
+                overdue_days=st.overdue_days,
+                is_overdue=st.is_overdue,
+                summary=due_summary(st),
             )
         )
     return items
@@ -106,12 +127,18 @@ async def build_snapshot(session: AsyncSession) -> str:
         who = c.driver.full_name if c.driver else "свободна"
         lines.append(f"- {c.plate}: {who}")
 
-    lines += ["", "Графики платежей (ближайшие даты):"]
+    overdue_count = sum(1 for it in upcoming if it.is_overdue)
+    total_debt = sum(it.debt_now for it in upcoming)
+    lines += [
+        "",
+        f"Графики платежей (в просрочке: {overdue_count}, "
+        f"суммарный долг: {fmt_money(total_debt)}):",
+    ]
     if upcoming:
         for it in upcoming:
             lines.append(
-                f"- {it.name} ({it.car_plate}): {it.amount}, "
-                f"след. платёж {it.next_due:%d.%m.%Y}"
+                f"- {it.name} ({it.car_plate}): период {fmt_money(it.amount)}, "
+                f"{it.summary}"
             )
     else:
         lines.append("- нет назначенных графиков")

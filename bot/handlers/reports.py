@@ -1,8 +1,6 @@
 """Админ: кнопочные отчёты (FR-RPT-1..3)."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +11,7 @@ from bot.filters import IsAdmin
 from bot.keyboards.admin import BTN_REPORTS
 from bot.keyboards.reports import reports_menu_kb
 from bot.services import reports as reports_service
+from bot.services.schedules import fmt_money
 
 router = Router(name="reports")
 router.message.filter(IsAdmin)
@@ -50,18 +49,17 @@ async def report_upcoming(query: CallbackQuery, session: AsyncSession) -> None:
     if not items:
         await _reply(query, "Нет водителей с назначенным графиком.")
         return
-    now = datetime.now(timezone.utc)
-    lines = ["⏰ <b>Кому скоро платить</b>\n"]
+    # В день срока просрочки ещё нет — считаем со следующего дня.
+    overdue_items = [it for it in items if it.overdue_days >= 1]
+    overdue = len(overdue_items)
+    total_debt = sum(it.debt_now for it in overdue_items)
+    header = "⏰ <b>Кому скоро платить</b>"
+    if overdue:
+        header += f"\nВ просрочке: {overdue}, суммарный долг: {fmt_money(total_debt)}"
+    lines = [header + "\n"]
     for it in items:
-        due = it.next_due
-        if getattr(due, "tzinfo", None) is None:
-            due_cmp = due.replace(tzinfo=timezone.utc)
-        else:
-            due_cmp = due
-        mark = "⚠️ просрочен" if due_cmp < now else ""
-        lines.append(
-            f"{it.name} · {it.car_plate}: {it.amount} — {due:%d.%m.%Y} {mark}".strip()
-        )
+        mark = "⚠️ " if it.overdue_days >= 1 else ""
+        lines.append(f"{mark}{it.name} · {it.car_plate}: {it.summary}")
     await _reply(query, "\n".join(lines))
 
 

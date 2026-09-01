@@ -18,15 +18,23 @@ _EXT_MEDIA_TYPE = {
     ".png": "image/png",
     ".webp": "image/webp",
     ".gif": "image/gif",
+    ".pdf": "application/pdf",
 }
 
 
-async def download_file_bytes(bot: Bot, file_id: str) -> tuple[bytes, str]:
-    """Скачивает файл Telegram в память, возвращает (bytes, media_type)."""
+async def download_file_bytes(
+    bot: Bot, file_id: str, *, media_type: str | None = None
+) -> tuple[bytes, str]:
+    """Скачивает файл Telegram в память, возвращает (bytes, media_type).
+
+    media_type можно задать явно (Telegram присылает mime_type документа) —
+    иначе он выводится из расширения файла на серверах Telegram.
+    """
     tg_file = await bot.get_file(file_id)
     src_path = tg_file.file_path or ""
-    ext = Path(src_path).suffix.lower()
-    media_type = _EXT_MEDIA_TYPE.get(ext, "image/jpeg")
+    if not media_type:
+        ext = Path(src_path).suffix.lower()
+        media_type = _EXT_MEDIA_TYPE.get(ext, "image/jpeg")
     buf = io.BytesIO()
     await bot.download_file(src_path, destination=buf)
     return buf.getvalue(), media_type

@@ -4,6 +4,7 @@ from __future__ import annotations
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.callbacks import CarCB
@@ -49,8 +50,6 @@ async def open_cars(message: Message, session: AsyncSession) -> None:
 
 
 def _add_car_reply_kb():
-    from aiogram.utils.keyboard import ReplyKeyboardBuilder
-
     b = ReplyKeyboardBuilder()
     b.button(text=BTN_ADD_CAR)
     b.button(text="⬅️ В меню")

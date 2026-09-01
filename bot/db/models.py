@@ -7,10 +7,11 @@
 from __future__ import annotations
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     BigInteger,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
@@ -82,6 +83,14 @@ class Driver(Base):
     car_id: Mapped[int | None] = mapped_column(
         ForeignKey("cars.id", ondelete="SET NULL"), nullable=True
     )
+    # Увольнение — это АРХИВИРОВАНИЕ, а не удаление: запись и вся история
+    # платежей сохраняются (payments.driver_id стоит на CASCADE, удаление
+    # водителя стёрло бы его выписку). Уволенный теряет доступ к боту,
+    # машина освобождается, график останавливается.
+    active: Mapped[bool] = mapped_column(default=True, server_default="true")
+    fired_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -124,8 +133,16 @@ class PaymentSchedule(Base):
     )
     interval_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
     amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    # Внесено в счёт ТЕКУЩЕГО (ещё не закрытого) периода — частичная оплата.
+    # Инвариант: 0 <= paid_in_period < amount (переплата сразу закрывает периоды).
+    paid_in_period: Mapped[float] = mapped_column(
+        Numeric(12, 2), default=0, server_default="0"
+    )
     next_due_date: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     active: Mapped[bool] = mapped_column(default=True)
+    # Локальная дата последнего напоминания — не чаще одного в день,
+    # иначе при просрочке в 40 дней водитель получит 40 сообщений.
+    last_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -147,6 +164,12 @@ class Payment(Base):
     )  # дата/время из чека (распознано ИИ)
     receipt_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     receipt_path: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # "photo" | "document" — чем чек пришёл в Telegram. Пересылать владельцу
+    # file_id документа через send_photo нельзя (Telegram отвергнет), а чек
+    # приходит и фотографией, и файлом (скриншот, PDF из банка).
+    receipt_kind: Mapped[str] = mapped_column(
+        String(16), default="photo", server_default="photo"
+    )
     receipt_hash: Mapped[str | None] = mapped_column(
         String(64), index=True, nullable=True
     )  # для защиты от повторной отправки одного чека

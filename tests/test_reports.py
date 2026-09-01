@@ -47,6 +47,15 @@ async def test_upcoming(session):
     assert len(up) == 1 and up[0].name == "Иванов" and up[0].car_plate == "AA"
 
 
+async def test_upcoming_empty_when_no_schedules(session):
+    """Пустое состояние отчёта (QA 7.6).
+
+    На общем стенде его не воспроизвести, пока у кого-то есть активный график —
+    именно поэтому кейс и «не показался». Проверяем на чистой базе.
+    """
+    assert await rep.upcoming_payments(session) == []
+
+
 async def test_statements(session):
     await _seed(session)
     bd = await rep.statement_by_driver(session)
