@@ -1,0 +1,72 @@
+# Гейты качества из plan/08: тесты трёх сервисов, миграции на чистом
+# PostgreSQL (SQLite прячет часть PG-специфики) и валидность compose.
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e libs/contracts
+          pip install -r services/core-api/requirements.txt
+          pip install -r services/bot/requirements.txt
+          pip install -r services/tracker-adapter/requirements.txt
+
+      - name: Линтер
+        # Узкий набор правил: синтаксис, неопределённые имена, мёртвые импорты.
+        # Именно F821 поймал незамеченный NameError в обработчике суммы графика.
+        run: |
+          pip install ruff
+          ruff check services libs --select E9,F63,F7,F82,F401,F841
+
+      - name: Тесты core-api
+        working-directory: services/core-api
+        run: python -m pytest -q
+
+      - name: Тесты bot
+        working-directory: services/bot
+        run: python -m pytest -q
+
+      - name: Тесты tracker-adapter
+        working-directory: services/tracker-adapter
+        run: python -m pytest -q
+
+      - name: Миграции на чистом PostgreSQL
+        working-directory: services/core-api
+        env:
+          DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
+          ADMIN_IDS: "111"
+        run: python -m alembic upgrade head
+
+      - name: Валидность docker compose
+        # compose читает env_file: .env, а он в git не хранится — берём образец.
+        run: |
+          cp .env.example .env
+          docker compose config --quiet

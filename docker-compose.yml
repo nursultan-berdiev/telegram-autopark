@@ -1,15 +1,13 @@
-# Бот целиком в docker: postgres + bot.
+# Платформа управления автопарком: core-api (домен и БД) + tracker-adapter
+# (Traccar/H02) + bot (Telegram). Контекст сборки у всех — корень репозитория:
+# сервисам нужен общий пакет libs/contracts.
 #
-# ИИ бот НЕ содержит: распознавание чеков и ответы ассистента идут по HTTP в
-# claude-gateway (там живёт подписка). Поэтому в образе бота нет ни Node, ни
-# claude, ни API-ключа.
-#
-# Перед запуском поднимите шлюз — он создаёт сеть claude_net:
+# ИИ живёт в claude-gateway (внешняя сеть claude_net), ключей в образах нет:
 #   cd ../claude-gateway && docker compose up -d
 services:
   postgres:
     image: postgres:16-alpine
-    container_name: tg_auto_pg
+    container_name: fleet_pg
     restart: unless-stopped
     environment:
       POSTGRES_USER: tg_auto
@@ -18,41 +16,74 @@ services:
     ports:
       - "127.0.0.1:5432:5432"
     volumes:
-      - tg_auto_pg_data:/var/lib/postgresql/data
+      - pg_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U tg_auto -d tg_auto"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  bot:
-    build: .
-    container_name: tg_auto_bot
+  core-api:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile
+    container_name: fleet_core_api
     restart: unless-stopped
     env_file: .env
     environment:
-      # Внутри compose ходим к postgres по имени сервиса, а не через localhost.
       DATABASE_URL: postgresql+asyncpg://tg_auto:tg_auto@postgres:5432/tg_auto
-      # ИИ — через шлюз в общей сети claude_net.
       AI_BACKEND: http
       GATEWAY_URL: http://claude_gw_api:8080
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
       GATEWAY_MODEL: ${GATEWAY_MODEL:-sonnet}
+      ADAPTER_URL: http://tracker-adapter:8001
+    ports:
+      - "127.0.0.1:8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
-      # Фото машин, селфи, чеки — переживают пересоздание контейнера.
-      - tg_auto_storage:/app/storage
+      - files:/app/storage
     networks:
-      - default        # postgres
-      - claude_net     # claude-gateway
+      - default
+      - claude_net
+
+  tracker-adapter:
+    build:
+      context: .
+      dockerfile: services/tracker-adapter/Dockerfile
+    container_name: fleet_tracker_adapter
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CORE_API_URL: http://core-api:8000
+    depends_on:
+      - core-api
+    networks:
+      - default
+      - traccar_net
+
+  bot:
+    build:
+      context: .
+      dockerfile: services/bot/Dockerfile
+    container_name: fleet_bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CORE_API_URL: http://core-api:8000
+    depends_on:
+      - core-api
 
 networks:
   claude_net:
     external: true
     name: claude_net
+  # Сеть до Traccar: адаптер ходит к нему, наружу торчит только адаптер.
+  traccar_net:
+    external: true
+    name: ${TRACCAR_NETWORK:-claude_net}
 
 volumes:
-  tg_auto_pg_data:
-  tg_auto_storage:
+  pg_data:
+  files:

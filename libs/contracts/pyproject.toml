@@ -1,0 +1,13 @@
+[project]
+name = "fleet-contracts"
+version = "0.1.0"
+description = "Общие DTO HTTP-контрактов платформы автопарка"
+requires-python = ">=3.12"
+dependencies = ["pydantic>=2.10"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["contracts*"]
