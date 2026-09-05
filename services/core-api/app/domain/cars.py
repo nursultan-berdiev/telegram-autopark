@@ -19,6 +19,11 @@ async def list_free_cars(session: AsyncSession) -> list[Car]:
     return list(result.all())
 
 
+async def list_plates(session: AsyncSession) -> list[str]:
+    result = await session.scalars(select(Car.plate).order_by(Car.id))
+    return list(result.all())
+
+
 async def get_car(session: AsyncSession, car_id: int) -> Car | None:
     return await session.get(Car, car_id)
 

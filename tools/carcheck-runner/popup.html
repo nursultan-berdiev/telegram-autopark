@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px/1.45 system-ui, sans-serif; width: 320px; margin: 0; padding: 12px; }
+      button { font: inherit; padding: 6px 12px; cursor: pointer; }
+      #log { margin-top: 10px; max-height: 260px; overflow-y: auto; white-space: pre-wrap; }
+      .err { color: #b00020; }
+      .muted { color: #666; }
+      a { color: #06c; }
+    </style>
+  </head>
+  <body>
+    <button id="run">Проверить парк</button>
+    <span id="mode" class="muted"></span>
+    <div id="log"></div>
+    <div class="muted"><a href="#" id="opts">Настройки</a></div>
+    <script src="popup.js"></script>
+  </body>
+</html>

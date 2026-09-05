@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     # --- Токены по областям ---------------------------------------------------
     core_api_token: str = Field(default="", alias="CORE_API_TOKEN")
     ingest_token: str = Field(default="", alias="INGEST_TOKEN")
+    # Раннер живёт в браузере владельца — самой ненадёжной поверхности,
+    # и мастер-ключ ему давать нельзя.
+    fines_import_token: str = Field(default="", alias="FINES_IMPORT_TOKEN")
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")
 

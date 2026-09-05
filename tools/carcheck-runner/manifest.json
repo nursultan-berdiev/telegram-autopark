@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Автопарк: проверка штрафов",
+  "version": "0.1.0",
+  "description": "Прогоняет номера парка через форму carcheck.gov.kg и заводит найденные штрафы в core-api.",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["https://carcheck.gov.kg/*"],
+  "optional_host_permissions": ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Проверить штрафы парка" },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["https://carcheck.gov.kg/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    { "resources": ["page.js"], "matches": ["https://carcheck.gov.kg/*"] }
+  ]
+}

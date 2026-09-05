@@ -4,6 +4,8 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
+from pydantic import Field
+
 from .common import DTO
 
 
@@ -29,6 +31,33 @@ class FineCreate(DTO):
     issued_at: datetime | None = None
     external_ref: str | None = None
     note: str | None = None
+
+
+class FineImportItem(DTO):
+    """Штраф, найденный внешним источником: машина ищется по госномеру."""
+
+    plate: str = Field(min_length=1, max_length=32)
+    # Длина под колонку в БД: молчаливая обрезка сломала бы идемпотентность.
+    external_ref: str = Field(min_length=1, max_length=64)
+    amount: Decimal | None = None
+    currency: str | None = Field(default=None, max_length=8)
+    issued_at: datetime | None = None
+    note: str | None = None
+
+
+class FineImportResult(DTO):
+    """Итог пакетного импорта.
+
+    `created` — заведено новых, `skipped` — уже были в базе по номеру
+    постановления, `unknown_plates` — номера не из нашего парка,
+    `ambiguous_plates` — номера, сходящиеся сразу с двумя машинами парка.
+    """
+
+    created: int = 0
+    skipped: int = 0
+    unknown_plates: list[str] = []
+    # Номер сходится с двумя машинами парка — импортировать наугад нельзя.
+    ambiguous_plates: list[str] = []
 
 
 class MaintenanceDTO(DTO):

@@ -303,7 +303,19 @@ class FineStatus(str, enum.Enum):
 
 class Fine(Base):
     __tablename__ = "fines"
-    __table_args__ = (Index("ix_fines_car_issued", "car_id", "issued_at"),)
+    __table_args__ = (
+        Index("ix_fines_car_issued", "car_id", "issued_at"),
+        # Импорт из внешнего источника идёт по расписанию: без этого повторный
+        # прогон завёл бы тот же штраф второй раз.
+        Index(
+            "uq_fine_external_ref",
+            "car_id",
+            "external_ref",
+            unique=True,
+            sqlite_where=text("external_ref IS NOT NULL"),
+            postgresql_where=text("external_ref IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     car_id: Mapped[int] = mapped_column(ForeignKey("cars.id", ondelete="CASCADE"))
