@@ -12,7 +12,14 @@ from .drivers import (
     InviteCheckDTO,
     MeDTO,
 )
-from .fleet import FineCreate, FineDTO, MaintenanceDTO, MaintenanceUpsert
+from .fleet import (
+    FineCreate,
+    FineDTO,
+    FineImportItem,
+    FineImportResult,
+    MaintenanceDTO,
+    MaintenanceUpsert,
+)
 from .payments import (
     PaymentCreate,
     PaymentDTO,
@@ -51,5 +58,6 @@ __all__ = [
     "TelemetryPoint", "TelemetryBatchResult",
     "CommandRequest", "CommandDTO", "CommandResult",
     "RuleDTO", "RuleUpsert", "AlertDTO",
-    "FineDTO", "FineCreate", "MaintenanceDTO", "MaintenanceUpsert",
+    "FineDTO", "FineCreate", "FineImportItem", "FineImportResult",
+    "MaintenanceDTO", "MaintenanceUpsert",
 ]

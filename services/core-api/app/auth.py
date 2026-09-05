@@ -43,16 +43,44 @@ async def require_ingest(authorization: str | None = Header(default=None)) -> st
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="неверный токен")
 
 
+async def require_fines_import(authorization: str | None = Header(default=None)) -> str:
+    """Импорт штрафов принимает ТОЛЬКО FINES_IMPORT_TOKEN.
+
+    Токен уезжает в расширение на машине владельца, поэтому область у него
+    ровно одна: мастер-ключ там дал бы и разблокировку двигателя.
+    """
+    token = _bearer(authorization)
+    if settings.fines_import_token and token == settings.fines_import_token:
+        return "fines-import"
+    if settings.core_api_token and token == settings.core_api_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="импорт штрафов принимает только FINES_IMPORT_TOKEN",
+        )
+    raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="неверный токен")
+
+
 async def tg_user_id(x_tg_user_id: int | None = Header(default=None)) -> int | None:
     return x_tg_user_id
+
+
+def _admin_or_403(actor: int | None) -> int:
+    if not settings.is_admin(actor):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="действие доступно только админу"
+        )
+    return int(actor)  # type: ignore[arg-type]
 
 
 async def require_admin_actor(
     _: str = Depends(require_core), actor: int | None = Depends(tg_user_id)
 ) -> int:
     """Чувствительные действия проверяем на сервере, а не по слову клиента."""
-    if not settings.is_admin(actor):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="действие доступно только админу"
-        )
-    return int(actor)  # type: ignore[arg-type]
+    return _admin_or_403(actor)
+
+
+async def require_import_actor(
+    _: str = Depends(require_fines_import), actor: int | None = Depends(tg_user_id)
+) -> int:
+    """Узкий токен всё равно не отменяет вопроса «от чьего имени заведён штраф»."""
+    return _admin_or_403(actor)

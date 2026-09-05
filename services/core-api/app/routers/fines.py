@@ -6,13 +6,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_admin_actor, require_core
+from app.auth import require_admin_actor, require_core, require_import_actor
 from app.db.models import Fine
 from app.db.session import get_session
 from app.domain import cars as cars_service
 from app.domain import fines as fines_service
 from app.errors import NotFound
-from contracts import FineCreate, FineDTO
+from contracts import FineCreate, FineDTO, FineImportItem, FineImportResult
 
 router = APIRouter()
 
@@ -80,6 +80,41 @@ async def add_car_fine(
         created_by=actor,
     )
     return _fine_dto(fine)
+
+
+@router.get("/fines/import/plates", response_model=list[str])
+async def import_plates(
+    session: AsyncSession = Depends(get_session),
+    _: int = Depends(require_import_actor),
+) -> list[str]:
+    """Номера парка для раннера: узкому токену не нужен доступ ко всему /cars."""
+    return await cars_service.list_plates(session)
+
+
+@router.post("/fines/import", response_model=FineImportResult)
+async def import_car_fines(
+    items: list[FineImportItem],
+    source: str = "carcheck",
+    session: AsyncSession = Depends(get_session),
+    actor: int = Depends(require_import_actor),
+) -> FineImportResult:
+    """Пакетная заливка найденных снаружи штрафов: повторный прогон безопасен."""
+    # Домен не должен знать о транспортных DTO — как в routers/telemetry.py.
+    rows = [
+        fines_service.FineImportRow(
+            plate=item.plate,
+            external_ref=item.external_ref,
+            amount=item.amount,
+            currency=item.currency,
+            issued_at=item.issued_at,
+            note=item.note,
+        )
+        for item in items
+    ]
+    outcome = await fines_service.import_fines(
+        session, rows, source=source, created_by=actor
+    )
+    return FineImportResult(**outcome._asdict())
 
 
 @router.post("/fines/{fine_id}/pay", response_model=FineDTO)

@@ -8,6 +8,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 os.environ.setdefault("ADMIN_IDS", "111,222")
 os.environ.setdefault("CORE_API_TOKEN", "core-test-token")
 os.environ.setdefault("INGEST_TOKEN", "ingest-test-token")
+os.environ.setdefault("FINES_IMPORT_TOKEN", "import-test-token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 
 import pytest  # noqa: E402
@@ -21,6 +22,7 @@ from app.db.base import Base  # noqa: E402
 
 CORE_TOKEN = os.environ["CORE_API_TOKEN"]
 INGEST_TOKEN = os.environ["INGEST_TOKEN"]
+IMPORT_TOKEN = os.environ["FINES_IMPORT_TOKEN"]
 ADMIN_ID = 111
 
 

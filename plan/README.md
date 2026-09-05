@@ -47,6 +47,7 @@
 |---|---|---|
 | Этап 1 (бот аренды) | [PJ-1](https://team.keydev.kg/task-board/task/2294/) + PJ-2…PJ-11 | машины, водители, графики, платежи с ИИ-чеками |
 | Этап 2 (платформа) | [PJ-65](https://team.keydev.kg/task-board/task/2917/) | фазы 0–5 из [07-phases.md](07-phases.md) |
+| Импорт штрафов | [PJ-67](https://team.keydev.kg/task-board/task/2940/) | `POST /fines/import` и раннер [tools/carcheck-runner](../tools/carcheck-runner/) |
 
 Правило: в описании каждого PR — ссылка на задачу трекера и явный scope (номера фаз).
 Ревьюер — AlterEgoNurs.
