@@ -12,8 +12,26 @@ from bot.config import settings
 from bot.handlers import get_main_router
 from bot.logger import setup_logging
 from bot.middlewares.role import RoleMiddleware
+from bot.scheduler import setup_scheduler
 
 logger = logging.getLogger(__name__)
+
+
+def create_dispatcher() -> Dispatcher:
+    """Собирает диспетчер: middleware ролей + роутеры.
+
+    RoleMiddleware обязательно OUTER: фильтры ролей (IsAdmin/IsDriver) читают
+    data["role"], а inner-middleware выполняется уже ПОСЛЕ фильтров — тогда
+    фильтр падает с TypeError на каждом апдейте.
+    """
+    dp = Dispatcher()
+
+    role_mw = RoleMiddleware()
+    dp.message.outer_middleware(role_mw)
+    dp.callback_query.outer_middleware(role_mw)
+
+    dp.include_router(get_main_router())
+    return dp
 
 
 async def main() -> None:
@@ -29,18 +47,16 @@ async def main() -> None:
         token=settings.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
-    dp = Dispatcher()
-
-    # Middleware ролей — на сообщения и колбэки.
-    role_mw = RoleMiddleware()
-    dp.message.middleware(role_mw)
-    dp.callback_query.middleware(role_mw)
-
-    dp.include_router(get_main_router())
+    dp = create_dispatcher()
+    scheduler = setup_scheduler(bot)  # ежедневные напоминания о платежах
 
     logger.info("Бот запускается. Админов: %d", len(settings.admin_ids))
     await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
 
 
 if __name__ == "__main__":

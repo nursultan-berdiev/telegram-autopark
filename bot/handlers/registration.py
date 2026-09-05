@@ -6,21 +6,51 @@ import logging
 from aiogram import Bot, F, Router
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from bot.db.models import CarStatus
+from bot.db.models import Driver
 from bot.keyboards.admin import admin_menu
 from bot.keyboards.drivers import share_phone_kb
 from bot.middlewares.role import Role
 from bot.services import cars as cars_service
 from bot.services import drivers as drivers_service
 from bot.services import invitations as invitations_service
+from bot.services.invitations import InviteProblem
 from bot.services.storage import save_telegram_file
 from bot.states.registration import Registration
 
 logger = logging.getLogger(__name__)
 router = Router(name="registration")
+
+_ASK_OWNER = "Обратитесь к владельцу автопарка за новой ссылкой."
+
+# Отказ объясняем по существу: «ссылка протухла» и «машину занял другой» —
+# разные ситуации, и водителю от них нужно разное.
+INVITE_PROBLEM_TEXT = {
+    InviteProblem.not_found: f"Ссылка-приглашение недействительна. {_ASK_OWNER}",
+    InviteProblem.expired: f"Срок действия ссылки-приглашения истёк. {_ASK_OWNER}",
+    InviteProblem.used: (
+        f"По этой ссылке уже зарегистрирован другой водитель. {_ASK_OWNER}"
+    ),
+    InviteProblem.car_taken: (
+        f"Это транспортное средство уже занято другим водителем. {_ASK_OWNER}"
+    ),
+}
+
+
+async def _already_registered_text(session: AsyncSession, driver: Driver | None) -> str:
+    """Водителю важно понимать ПОЧЕМУ нельзя: он уже за машиной, а не «просто зарегистрирован»."""
+    car = (
+        await cars_service.get_car(session, driver.car_id)
+        if driver is not None and driver.car_id
+        else None
+    )
+    plate = f" <b>{car.plate}</b>" if car else ""
+    return (
+        f"Вы уже закреплены за транспортным средством{plate}. "
+        "Повторная регистрация не нужна."
+    )
 
 
 @router.message(CommandStart(deep_link=True))
@@ -30,23 +60,22 @@ async def start_by_invite(
     state: FSMContext,
     session: AsyncSession,
     role: Role,
+    driver: Driver | None = None,
 ) -> None:
     if role is Role.admin:
         await message.answer("Вы администратор.", reply_markup=admin_menu())
         return
     if role is Role.driver:
-        await message.answer("Вы уже зарегистрированы как водитель.")
+        await message.answer(await _already_registered_text(session, driver))
         return
 
     code = command.args or ""
-    invitation = await invitations_service.get_valid_invitation(session, code)
-    if invitation is None:
-        await message.answer(
-            "Ссылка-приглашение недействительна или срок её действия истёк. "
-            "Обратитесь к владельцу автопарка за новой ссылкой."
-        )
+    check = await invitations_service.resolve_invitation(session, code)
+    if not check.ok:
+        await message.answer(INVITE_PROBLEM_TEXT[check.problem])
         return
 
+    invitation = check.invitation
     car = await cars_service.get_car(session, invitation.car_id)
     car_title = car.plate if car else "—"
 
@@ -91,8 +120,6 @@ async def reg_phone_text(message: Message, state: FSMContext) -> None:
 async def _save_phone(message: Message, state: FSMContext, phone: str) -> None:
     await state.update_data(phone=phone)
     await state.set_state(Registration.inn)
-    from aiogram.types import ReplyKeyboardRemove
-
     await message.answer(
         "Шаг 3 из 4. Введите ваш ИНН.", reply_markup=ReplyKeyboardRemove()
     )
@@ -118,23 +145,17 @@ async def reg_selfie(
     code = data["invite_code"]
     car_id = data["car_id"]
 
-    # Повторно валидируем приглашение и занятость машины на момент завершения.
-    invitation = await invitations_service.get_valid_invitation(session, code)
-    if invitation is None:
+    # Повторно валидируем приглашение и занятость машины на момент завершения:
+    # пока водитель заполнял форму, машину мог занять другой или ссылка могла
+    # протухнуть. Причину отказа называем ту же, что и на входе.
+    check = await invitations_service.resolve_invitation(session, code)
+    if not check.ok:
         await state.clear()
-        await message.answer(
-            "Срок действия ссылки истёк во время регистрации. "
-            "Обратитесь к владельцу за новой ссылкой."
-        )
+        await message.answer(INVITE_PROBLEM_TEXT[check.problem])
         return
 
+    invitation = check.invitation
     car = await cars_service.get_car(session, car_id)
-    if car is None or car.status != CarStatus.free:
-        await state.clear()
-        await message.answer(
-            "Выбранная машина больше недоступна. Обратитесь к владельцу."
-        )
-        return
 
     file_id = message.photo[-1].file_id
     selfie_path = await save_telegram_file(

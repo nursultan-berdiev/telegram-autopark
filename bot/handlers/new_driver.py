@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from bot.callbacks import NewDriverCB
 from bot.config import settings
+from bot.db.models import CarStatus
 from bot.filters import IsAdmin
 from bot.keyboards.admin import BTN_NEW_DRIVER
 from bot.keyboards.drivers import pick_car_kb
@@ -43,8 +44,6 @@ async def pick_car(
         await query.answer("Машина не найдена.", show_alert=True)
         return
     # Повторная проверка занятости на момент подтверждения.
-    from bot.db.models import CarStatus
-
     if car.status != CarStatus.free:
         await query.answer("Эта машина уже занята. Выберите другую.", show_alert=True)
         return
@@ -58,6 +57,6 @@ async def pick_car(
     await query.message.answer(
         f"✅ Приглашение для машины <b>{title}</b> создано.\n\n"
         f"Отправьте водителю эту ссылку (действует "
-        f"{settings.invite_ttl_hours} ч, одноразовая):\n{link}"
+        f"{settings.invite_ttl_label}, одноразовая):\n{link}"
     )
     await query.answer()

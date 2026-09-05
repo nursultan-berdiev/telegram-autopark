@@ -4,7 +4,7 @@
 Функциональные требования: [Функциональные_требования.md](Функциональные_требования.md).
 
 ## Стек
-- Python 3.12+ · aiogram 3 · PostgreSQL · SQLAlchemy (async) · Alembic · Claude API
+- Python 3.12+ · aiogram 3 · PostgreSQL · SQLAlchemy (async) · Alembic · Claude (API-ключ **или** подписка через `claude -p`)
 
 ## Запуск (dev)
 
@@ -17,7 +17,10 @@
    ```powershell
    pip install -r requirements.txt
    ```
-3. Скопировать `.env.example` → `.env` и заполнить (`BOT_TOKEN`, `ADMIN_IDS`, `DATABASE_URL`, `ANTHROPIC_API_KEY`).
+3. Скопировать `.env.example` → `.env` и заполнить (`BOT_TOKEN`, `ADMIN_IDS`, `DATABASE_URL`).
+   Для ИИ выбрать backend (`AI_BACKEND`): `api` — нужен `ANTHROPIC_API_KEY`; `cli` —
+   работает на **подписке** Anthropic через установленный и залогиненный `claude`
+   (Claude Code CLI), ключ не нужен; `auto` — api при наличии ключа, иначе cli.
 4. Поднять PostgreSQL и применить миграции:
    ```powershell
    alembic upgrade head
@@ -57,7 +60,9 @@ python -m pytest
 с реальными доступами:
 - запуск бота с реальным `BOT_TOKEN` и long-polling в Telegram;
 - миграции против PostgreSQL (`alembic upgrade head`);
-- вызовы Claude API (распознавание чека, ответы ассистента) — нужен `ANTHROPIC_API_KEY`.
+- вызовы Claude (распознавание чека, ответы ассистента) — либо `ANTHROPIC_API_KEY`
+  (`AI_BACKEND=api`), либо залогиненный `claude` CLI на подписке (`AI_BACKEND=cli`).
+  Оба пути проверены на реальном чеке (backend `cli` — через подписку).
 
 ## Роли
 - **admin** — id из `ADMIN_IDS` (переменная окружения, задаётся только при запуске);

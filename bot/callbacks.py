@@ -14,10 +14,20 @@ class NewDriverCB(CallbackData, prefix="newdrv"):
     car_id: int
 
 
+class DriverCB(CallbackData, prefix="drv"):
+    action: str  # view | fire | fire_confirm | list_active | list_fired
+    driver_id: int = 0  # 0 — для действий над списком
+
+
 class ScheduleCB(CallbackData, prefix="sched"):
     action: str  # pick_driver | set_period | start_today | start_tomorrow
     driver_id: int
-    value: str = ""  # период (daily/weekly/monthly/custom) при set_period
+    # Период (daily/weekly/monthly/custom) — только для set_period.
+    # ОБЯЗАТЕЛЬНО Optional: пустое поле пакуется как хвостовой разделитель
+    # ("sched:pick_driver:1:"), а при распаковке aiogram отдаёт None. Для
+    # не-опционального str это ValidationError → фильтр молча не срабатывает,
+    # и хендлер не вызывается вообще (без единой строчки в логе).
+    value: str | None = None
 
 
 class PaymentCB(CallbackData, prefix="pay"):

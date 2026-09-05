@@ -48,8 +48,12 @@ class RoleMiddleware(BaseMiddleware):
                 if settings.is_admin(user.id):
                     role = Role.admin
                 else:
+                    # Только ДЕЙСТВУЮЩИЙ водитель: уволенный снова становится
+                    # гостем и теряет доступ к меню и оплате.
                     driver = await session.scalar(
-                        select(Driver).where(Driver.tg_user_id == user.id)
+                        select(Driver).where(
+                            Driver.tg_user_id == user.id, Driver.active.is_(True)
+                        )
                     )
                     if driver is not None:
                         role = Role.driver

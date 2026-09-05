@@ -43,6 +43,29 @@ async def test_used_invitation_invalid(session):
     assert await inv_service.get_valid_invitation(session, inv.code) is None
 
 
+async def test_invite_ttl_minutes_overrides_hours(session, monkeypatch):
+    """QA-стенд: INVITE_TTL_MINUTES позволяет проверить протухание за минуты."""
+    from datetime import timedelta
+
+    from bot.config import settings
+
+    monkeypatch.setattr(settings, "invite_ttl_minutes", 2)
+    assert settings.invite_ttl == timedelta(minutes=2)
+    assert settings.invite_ttl_label == "2 мин"
+
+    car = await _make_car(session)
+    inv = await inv_service.create_invitation(session, car_id=car.id, created_by=1)
+    # в SQLite дата возвращается naive — приводим к UTC, как это делает сервис
+    expires_at = inv.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    lifetime = expires_at - datetime.now(timezone.utc)
+    assert timedelta(minutes=1) < lifetime <= timedelta(minutes=2)
+
+    monkeypatch.setattr(settings, "invite_ttl_minutes", 0)
+    assert settings.invite_ttl == timedelta(hours=24)
+
+
 async def test_expired_invitation(session):
     car = await _make_car(session)
     inv = await inv_service.create_invitation(session, car_id=car.id, created_by=1)

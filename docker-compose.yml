@@ -1,0 +1,58 @@
+# Бот целиком в docker: postgres + bot.
+#
+# ИИ бот НЕ содержит: распознавание чеков и ответы ассистента идут по HTTP в
+# claude-gateway (там живёт подписка). Поэтому в образе бота нет ни Node, ни
+# claude, ни API-ключа.
+#
+# Перед запуском поднимите шлюз — он создаёт сеть claude_net:
+#   cd ../claude-gateway && docker compose up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tg_auto_pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tg_auto
+      POSTGRES_PASSWORD: tg_auto
+      POSTGRES_DB: tg_auto
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - tg_auto_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tg_auto -d tg_auto"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  bot:
+    build: .
+    container_name: tg_auto_bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Внутри compose ходим к postgres по имени сервиса, а не через localhost.
+      DATABASE_URL: postgresql+asyncpg://tg_auto:tg_auto@postgres:5432/tg_auto
+      # ИИ — через шлюз в общей сети claude_net.
+      AI_BACKEND: http
+      GATEWAY_URL: http://claude_gw_api:8080
+      GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
+      GATEWAY_MODEL: ${GATEWAY_MODEL:-sonnet}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Фото машин, селфи, чеки — переживают пересоздание контейнера.
+      - tg_auto_storage:/app/storage
+    networks:
+      - default        # postgres
+      - claude_net     # claude-gateway
+
+networks:
+  claude_net:
+    external: true
+    name: claude_net
+
+volumes:
+  tg_auto_pg_data:
+  tg_auto_storage:

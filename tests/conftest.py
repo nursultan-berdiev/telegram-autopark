@@ -11,6 +11,7 @@ os.environ.setdefault(
 )
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
 
+import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402
 from sqlalchemy.ext.asyncio import (  # noqa: E402
     async_sessionmaker,
@@ -18,6 +19,18 @@ from sqlalchemy.ext.asyncio import (  # noqa: E402
 )
 
 from bot.db.base import Base  # noqa: E402
+
+
+@pytest.fixture(scope="session")
+def dispatcher():
+    """Один диспетчер на весь прогон.
+
+    Роутеры — модульные синглтоны: собрать диспетчер дважды нельзя, aiogram
+    бросит «Router is already attached».
+    """
+    from bot import __main__ as app
+
+    return app.create_dispatcher()
 
 
 @pytest_asyncio.fixture
@@ -28,4 +41,14 @@ async def session():
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as s:
         yield s
+    await engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def session_maker():
+    """Фабрика сессий к БД в памяти — для подмены async_session_maker в middleware."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield async_sessionmaker(engine, expire_on_commit=False)
     await engine.dispose()
