@@ -3,7 +3,10 @@
 // выдаёт сама страница в браузере владельца.
 
 const PLATE_INPUT = "input[name='govPlate']";
-const SUBMIT_TEXT = /проверить/i;
+// У сайта переключатель Кырг/Рус/Eng: в кыргызской локали кнопка другая.
+// Паттерн заякорен: «check» как подстрока встречается в куках-баннерах и
+// прочих кнопках, и клик ушёл бы не туда.
+const SUBMIT_TEXT = /^(проверить|проверить штрафы|текшер|текшерүү|check|check fines)$/i;
 const WAIT_RESPONSE_MS = 25000;
 
 let lastResponse = null;
@@ -29,9 +32,13 @@ function setControlledValue(input, value) {
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
-function findSubmit() {
-  const buttons = Array.from(document.querySelectorAll('button'));
-  return buttons.find((b) => SUBMIT_TEXT.test(b.textContent || '') && !b.disabled) || null;
+function findSubmit(input) {
+  // Ищем в форме с полем номера, а не по всей странице: первая совпавшая
+  // кнопка документа легко окажется чужой.
+  const scope = (input && input.closest('form')) || document;
+  const inScope = Array.from(scope.querySelectorAll('button'));
+  const match = (b) => SUBMIT_TEXT.test((b.textContent || '').trim()) && !b.disabled;
+  return inScope.find(match) || Array.from(document.querySelectorAll('button')).find(match) || null;
 }
 
 async function checkPlate(plate) {
@@ -43,7 +50,7 @@ async function checkPlate(plate) {
   setControlledValue(input, plate);
   await sleep(400);
 
-  const button = findSubmit();
+  const button = findSubmit(input);
   if (!button) return { plate, ok: false, error: 'кнопка проверки не найдена' };
   button.click();
 
