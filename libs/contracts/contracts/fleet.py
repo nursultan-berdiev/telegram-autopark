@@ -14,6 +14,10 @@ class FineDTO(DTO):
     car_id: int
     driver_id: int | None = None
     amount: Decimal | None = None
+    # Скидка есть не у всех источников: у carcheck и ручного ввода её нет,
+    # и пустое здесь означает «неизвестно», а не «скидки нет».
+    amount_to_pay: Decimal | None = None
+    discount_days_left: int | None = None
     currency: str | None = None
     issued_at: datetime
     status: str = "unpaid"
@@ -40,6 +44,10 @@ class FineImportItem(DTO):
     # Длина под колонку в БД: молчаливая обрезка сломала бы идемпотентность.
     external_ref: str = Field(min_length=1, max_length=64)
     amount: Decimal | None = None
+    # Необязательны: раннер в браузере отдаёт carcheck-форму без сумм, и
+    # старый клиент должен продолжать работать без правок.
+    amount_to_pay: Decimal | None = None
+    discount_days_left: int | None = None
     currency: str | None = Field(default=None, max_length=8)
     issued_at: datetime | None = None
     note: str | None = None

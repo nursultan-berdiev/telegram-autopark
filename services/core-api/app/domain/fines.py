@@ -21,6 +21,10 @@ class FineImportRow:
     plate: str
     external_ref: str
     amount: Decimal | None = None
+    # Сумма со скидкой приходит не от всех источников: carcheck сумм не
+    # отдаёт вовсе, и пустое здесь — нормальное состояние, а не потеря.
+    amount_to_pay: Decimal | None = None
+    discount_days_left: int | None = None
     currency: str | None = None
     issued_at: datetime | None = None
     note: str | None = None
@@ -225,6 +229,8 @@ async def import_fines(
                 car_id=car_id,
                 driver_id=drivers.get(car_id),
                 amount=item.amount,
+                amount_to_pay=item.amount_to_pay,
+                discount_days_left=item.discount_days_left,
                 currency=item.currency,
                 issued_at=item.issued_at or _now(),
                 source=source,
