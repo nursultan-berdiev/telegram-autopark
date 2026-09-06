@@ -387,6 +387,7 @@ class AlertType(str, enum.Enum):
     # Системные: рождаются джобами/обработчиками, rule_id=NULL.
     command_unconfirmed = "command_unconfirmed"
     odometer_untrusted = "odometer_untrusted"
+    new_fine = "new_fine"
 
 
 class AlertStatus(str, enum.Enum):

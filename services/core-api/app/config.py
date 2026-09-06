@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     fines_import_token: str = Field(default="", alias="FINES_IMPORT_TOKEN")
     # --- Фоновые задачи -------------------------------------------------------
     redis_url: str = Field(default="redis://redis:6379/0", alias="REDIS_URL")
+    # Пауза между номерами: всплеск запросов роняет оценку reCAPTCHA,
+    # и сервис начинает отказывать.
+    carcheck_pause_seconds: float = Field(default=7.0, alias="CARCHECK_PAUSE_SECONDS")
+    carcheck_failure_alert_after: int = Field(
+        default=3, alias="CARCHECK_FAILURE_ALERT_AFTER"
+    )
 
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")
