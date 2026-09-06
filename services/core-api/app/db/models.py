@@ -507,3 +507,68 @@ class Command(Base):
     acked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class PeriodicTask(Base):
+    """Расписание фоновой задачи, редактируемое без передеплоя.
+
+    Аналог PeriodicTask из django-celery-beat: планировщик читает таблицу,
+    а не код, поэтому частота проверки штрафов меняется из админки.
+    """
+
+    __tablename__ = "periodic_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Имя задачи для человека, а task — точка входа для celery.
+    name: Mapped[str] = mapped_column(String(128), unique=True)
+    task: Mapped[str] = mapped_column(String(255))
+    # Ровно один из двух способов задать период; проверяется в домене.
+    interval_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    crontab: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    args: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    enabled: Mapped[bool] = mapped_column(default=True, server_default="true")
+    # Планировщик перечитывает таблицу по этой отметке, а не каждый тик.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    total_run_count: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class TaskRunStatus(str, enum.Enum):
+    ok = "ok"
+    failed = "failed"
+    refused = "refused"
+
+
+class TaskRun(Base):
+    """Журнал прогонов.
+
+    Отказ сервиса и «нарушений нет» — разные исходы: без этого различия
+    заблокированная проверка выглядела бы как успешная и пустая.
+    """
+
+    __tablename__ = "task_runs"
+    __table_args__ = (Index("ix_task_runs_task_started", "task", "started_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    task: Mapped[str] = mapped_column(String(255))
+    periodic_task_id: Mapped[int | None] = mapped_column(
+        ForeignKey("periodic_tasks.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[TaskRunStatus] = mapped_column(
+        Enum(TaskRunStatus, name="task_run_status")
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
