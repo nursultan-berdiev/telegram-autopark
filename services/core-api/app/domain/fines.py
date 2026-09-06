@@ -27,12 +27,21 @@ class FineImportRow:
 
 
 class FineImportOutcome(NamedTuple):
-    """Итог пакетного импорта; поля именованные, чтобы их нельзя было перепутать."""
+    """Итог пакетного импорта; поля именованные, чтобы их нельзя было перепутать.
+
+    `created_per_plate` и `car_id_per_plate` избавляют вызывающего от второго
+    резолва машины по номеру: индекс уже построен здесь, причём с нормализацией,
+    а поиск по точному совпадению строки имел бы другую семантику.
+    """
 
     created: int
     skipped: int
     unknown_plates: list[str]
     ambiguous_plates: list[str]
+    # Без дефолтов: у typing.NamedTuple дефолт — один объект на все
+    # экземпляры, и общий словарь испортился бы для всех сразу.
+    created_per_plate: dict[str, int]
+    car_id_per_plate: dict[str, int]
 
 
 def _now() -> datetime:
@@ -183,8 +192,15 @@ async def import_fines(
     *,
     source: str = "carcheck",
     created_by: int | None = None,
+    commit: bool = True,
 ) -> FineImportOutcome:
-    """Заводит найденные снаружи штрафы, пропуская уже известные."""
+    """Заводит найденные снаружи штрафы, пропуская уже известные.
+
+    `commit=False` отдаёт фиксацию вызывающему: импорт и уведомление о новом
+    штрафе должны быть атомарны, иначе штраф ложится в базу, уведомление
+    падает, а следующий прогон считает его уже не новым — и о нём никто
+    никогда не узнает.
+    """
     by_plate, ambiguous_keys = await _build_plate_index(session)
     drivers = await _active_driver_by_car(session)
 
@@ -192,6 +208,8 @@ async def import_fines(
     skipped = 0
     unknown: dict[str, str] = {}
     ambiguous: dict[str, str] = {}
+    created_per_plate: dict[str, int] = {}
+    car_id_per_plate: dict[str, int] = {}
     for item in items:
         key = normalize_plate(item.plate)
         if key in ambiguous_keys:
@@ -215,16 +233,21 @@ async def import_fines(
                 created_by=created_by,
             ),
         )
+        car_id_per_plate[item.plate] = car_id
         if inserted:
             created += 1
+            created_per_plate[item.plate] = created_per_plate.get(item.plate, 0) + 1
         else:
             skipped += 1
-    await session.commit()
+    if commit:
+        await session.commit()
     return FineImportOutcome(
         created=created,
         skipped=skipped,
         unknown_plates=list(unknown.values()),
         ambiguous_plates=list(ambiguous.values()),
+        created_per_plate=created_per_plate,
+        car_id_per_plate=car_id_per_plate,
     )
 
 

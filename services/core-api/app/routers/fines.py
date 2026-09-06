@@ -114,7 +114,13 @@ async def import_car_fines(
     outcome = await fines_service.import_fines(
         session, rows, source=source, created_by=actor
     )
-    return FineImportResult(**outcome._asdict())
+    # Разбивка по номерам — для внутренних вызовов, в контракт не идёт.
+    return FineImportResult(
+        created=outcome.created,
+        skipped=outcome.skipped,
+        unknown_plates=outcome.unknown_plates,
+        ambiguous_plates=outcome.ambiguous_plates,
+    )
 
 
 @router.post("/fines/{fine_id}/pay", response_model=FineDTO)

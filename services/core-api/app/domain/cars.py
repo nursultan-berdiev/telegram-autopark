@@ -24,6 +24,10 @@ async def list_plates(session: AsyncSession) -> list[str]:
     return list(result.all())
 
 
+async def find_id_by_plate(session: AsyncSession, plate: str) -> int | None:
+    return await session.scalar(select(Car.id).where(Car.plate == plate))
+
+
 async def get_car(session: AsyncSession, car_id: int) -> Car | None:
     return await session.get(Car, car_id)
 

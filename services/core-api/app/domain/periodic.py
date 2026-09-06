@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import PeriodicTask, TaskRun
+from app.db.models import PeriodicTask, TaskRun, TaskRunStatus
 from app.errors import Conflict, Validation
 
 MIN_INTERVAL_SECONDS = 60
@@ -144,3 +144,21 @@ async def last_run(session: AsyncSession, task: str) -> TaskRun | None:
     return await session.scalar(
         select(TaskRun).where(TaskRun.task == task).order_by(TaskRun.started_at.desc()).limit(1)
     )
+
+
+async def consecutive_failures(
+    session: AsyncSession, task: str, *, limit: int = 10
+) -> int:
+    """Сколько последних прогонов подряд закончились не успехом.
+
+    Отказ сервиса не виден снаружи никак: задача отработала, ошибок нет,
+    штрафов «нет». Считать серию — единственный способ заметить, что нас
+    перестали пускать.
+    """
+    runs = await list_runs(session, task=task, limit=limit)
+    count = 0
+    for run in runs:
+        if run.status is TaskRunStatus.ok:
+            break
+        count += 1
+    return count

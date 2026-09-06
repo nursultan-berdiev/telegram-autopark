@@ -85,7 +85,7 @@ services:
   celery-worker:
     build:
       context: .
-      dockerfile: services/core-api/Dockerfile
+      dockerfile: services/core-api/Dockerfile.worker
     container_name: fleet_celery_worker
     restart: unless-stopped
     env_file: .env
