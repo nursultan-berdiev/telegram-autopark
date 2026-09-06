@@ -217,6 +217,33 @@ created_at, updated_at
 `CommandStatus{queued, blocked_by_safety, sent, acked, unconfirmed, failed}`.
 Существующие (`CarStatus, InviteStatus, SchedulePeriod, PaymentStatus`) — без изменений.
 
+## Добавлено после платформы (миграции 0010–0013)
+
+Подробности и обоснования — [10-fines-scheduling-admin.md](10-fines-scheduling-admin.md).
+
+```
+fines: частичный уникальный индекс uq_fine_external_ref (car_id, external_ref)
+       WHERE external_ref IS NOT NULL           # 0010, идемпотентность импорта
+
+AlertType += new_fine                            # 0012, системный алерт о новом штрафе
+
+periodic_tasks                                   # 0011, расписания фоновых задач
+id, name unique, task, interval_seconds|None, crontab|None, args JSON|None,
+enabled bool, updated_at, last_run_at|None, total_run_count int, created_at
+# инвариант: задан ровно один из interval_seconds / crontab (проверяет домен)
+
+task_runs                                        # 0011, журнал прогонов
+id, task, periodic_task_id FK|None SET NULL,
+status TaskRunStatus{ok, failed, refused}, started_at, finished_at|None,
+detail Text|None, payload JSON|None
+Index ix_task_runs_task_started (task, started_at)
+# refused ≠ ok: отказ сервиса не должен выглядеть как успешная пустая проверка
+
+admin_login_tokens                               # 0013, вход в веб-админку
+id, token_hash unique index, tg_user_id BigInt, expires_at, used_at|None, created_at
+# храним хеш, не токен: утечка таблицы не должна давать вход
+```
+
 ## Правила по миграциям (для агентов)
 
 - Пишем руками, линейной цепочкой: `0005 → 0006 → 0007 → 0008`. `down_revision` строго на
