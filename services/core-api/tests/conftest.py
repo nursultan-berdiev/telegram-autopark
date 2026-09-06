@@ -10,6 +10,8 @@ os.environ.setdefault("CORE_API_TOKEN", "core-test-token")
 os.environ.setdefault("INGEST_TOKEN", "ingest-test-token")
 os.environ.setdefault("FINES_IMPORT_TOKEN", "import-test-token")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test")
+os.environ.setdefault("ADMIN_SESSION_SECRET", "admin-test-secret")
+os.environ.setdefault("ADMIN_BASE_URL", "http://testserver")
 
 import pytest  # noqa: E402
 import pytest_asyncio  # noqa: E402

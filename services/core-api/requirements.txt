@@ -17,6 +17,10 @@ redis==5.2.1
 croniter==6.0.0
 psycopg[binary]==3.2.3
 
+# Веб-админка: серверный рендеринг, отдельный фронтенд ради пяти форм не нужен.
+jinja2==3.1.5
+itsdangerous==2.2.0
+
 # dev / тесты
 pytest==8.3.4
 pytest-asyncio==0.25.0

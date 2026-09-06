@@ -25,5 +25,11 @@ celery_app.conf.update(
     task_time_limit=60 * 30,
     task_soft_time_limit=60 * 25,
     worker_max_tasks_per_child=50,
+    # Исход прогона мы храним в task_runs, а не в бэкенде результатов:
+    # лишний поход в Redis — только лишний режим отказа.
+    task_ignore_result=True,
+    # Без ограничения недоступный брокер вешает вызывающего на десятки
+    # секунд ретраев — для кнопки в админке это неприемлемо.
+    broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 3},
     beat_scheduler="app.tasks.beat:DatabaseScheduler",
 )

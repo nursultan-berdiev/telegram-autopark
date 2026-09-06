@@ -4,6 +4,7 @@ from __future__ import annotations
 from aiogram import Router
 
 from app.handlers import (
+    admin_web,
     ai_query,
     alerts,
     cars,
@@ -45,6 +46,7 @@ def get_main_router() -> Router:
     router.include_router(payments.router)
     router.include_router(reports.router)
     router.include_router(ai_query.router)
+    router.include_router(admin_web.router)
     router.include_router(alerts.router)
     router.include_router(start.router)
 

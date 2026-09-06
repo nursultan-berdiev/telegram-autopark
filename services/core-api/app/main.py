@@ -6,10 +6,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from app.config import settings
 from app.errors import DomainError
+from app.web.deps import NotLoggedIn
 from app.jobs import start_jobs
 from app.logger import setup_logging
 from app.routers import (
@@ -23,6 +24,7 @@ from app.routers import (
     invitations,
     me,
     payments,
+    admin,
     periodic,
     reminders,
     reports,
@@ -47,6 +49,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Fleet core-api", version="0.1.0", lifespan=lifespan)
+
+
+@app.exception_handler(NotLoggedIn)
+async def _not_logged_in(request: Request, _: NotLoggedIn) -> Response:
+    """На страницах это редирект на объяснение, а не голый 401."""
+    if request.url.path.startswith("/admin"):
+        return RedirectResponse(url="/admin/login-required", status_code=303)
+    return JSONResponse(status_code=401, content={"detail": "нужен вход"})
 
 
 @app.exception_handler(DomainError)
@@ -76,3 +86,4 @@ app.include_router(commands.router, tags=["commands"])
 app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
 app.include_router(periodic.router, tags=["periodic"])
+app.include_router(admin.router, tags=["admin"])

@@ -130,8 +130,10 @@ class DatabaseScheduler(Scheduler):
             row = session.get(PeriodicTask, task_id)
             if row is None:
                 return
+            # Отметка ставится на постановку в очередь, чтобы задача не
+            # ушла в брокер повторно, пока предыдущая ещё выполняется.
+            # Счётчик успешных прогонов ведёт исполнитель — см. runlog.
             row.last_run_at = datetime.now(timezone.utc)
-            row.total_run_count = (row.total_run_count or 0) + 1
             session.commit()
 
 
