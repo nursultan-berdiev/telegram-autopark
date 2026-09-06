@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass, field
 from typing import Any
 
 # Переменные окружения должны быть заданы ДО импорта app.config.
@@ -14,6 +15,50 @@ import pytest  # noqa: E402
 
 ADMIN_ID = 111
 DRIVER_ID = 555
+
+
+# Подставные объекты Telegram. Живут здесь, а не в отдельном тестовом модуле:
+# их нужно и экранам, и проверкам актора, а две копии разъезжаются.
+@dataclass
+class FakeMessage:
+    answers: list[str] = field(default_factory=list)
+    from_user: Any = None
+
+    async def answer(self, text: str, **kwargs: Any) -> None:
+        self.answers.append(text)
+
+
+@dataclass
+class FakeUser:
+    id: int = ADMIN_ID
+
+
+@dataclass
+class FakeCallback:
+    message: FakeMessage = field(default_factory=FakeMessage)
+    from_user: FakeUser = field(default_factory=FakeUser)
+
+    async def answer(self, text: str | None = None, **kwargs: Any) -> None:
+        return None
+
+
+class FakeState:
+    def __init__(self) -> None:
+        self.data: dict = {}
+        self.state = None
+        self.cleared = False
+
+    async def set_state(self, state) -> None:
+        self.state = state
+
+    async def update_data(self, **kwargs) -> None:
+        self.data.update(kwargs)
+
+    async def get_data(self) -> dict:
+        return self.data
+
+    async def clear(self) -> None:
+        self.cleared = True
 
 
 class FakeApi:

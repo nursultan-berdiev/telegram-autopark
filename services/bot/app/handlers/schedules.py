@@ -145,7 +145,7 @@ async def set_amount(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(ScheduleCB.filter(F.action == "start_today"))
 async def start_today(query: CallbackQuery, state: FSMContext, api: ApiClient) -> None:
-    await _finish(query.message, state, api, _today_utc())
+    await _finish(query.message, state, api, _today_utc(), tg_id=query.from_user.id)
     await query.answer()
 
 
@@ -153,7 +153,13 @@ async def start_today(query: CallbackQuery, state: FSMContext, api: ApiClient) -
 async def start_tomorrow(
     query: CallbackQuery, state: FSMContext, api: ApiClient
 ) -> None:
-    await _finish(query.message, state, api, _today_utc() + timedelta(days=1))
+    await _finish(
+        query.message,
+        state,
+        api,
+        _today_utc() + timedelta(days=1),
+        tg_id=query.from_user.id,
+    )
     await query.answer()
 
 
@@ -164,7 +170,9 @@ async def start_manual(message: Message, state: FSMContext, api: ApiClient) -> N
     except (InvalidOperation, ValueError):
         await message.answer("Неверный формат. Введите дату как ДД.ММ.ГГГГ.")
         return
-    await _finish(message, state, api, d.replace(tzinfo=timezone.utc))
+    await _finish(
+        message, state, api, d.replace(tzinfo=timezone.utc), tg_id=message.from_user.id
+    )
 
 
 async def _finish(
@@ -172,11 +180,19 @@ async def _finish(
     state: FSMContext,
     api: ApiClient,
     next_due: datetime,
+    *,
+    tg_id: int,
 ) -> None:
+    """Актор приходит параметром, а не выводится из `message`.
+
+    Сюда попадает и `query.message` — сообщение бота с инлайн-клавиатурой, у
+    которого `from_user` это сам бот. Вывести отправителя из него нельзя.
+    """
     data = await state.get_data()
     try:
         resp = await api.set_schedule(
             data["driver_id"],
+            tg_id=tg_id,
             period=data["period"],
             amount=data["amount"],
             next_due_date=next_due,
