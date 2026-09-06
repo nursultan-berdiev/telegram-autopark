@@ -139,6 +139,27 @@ GET  /cars/{id}/commands                -> [CommandDTO]   (аудит)
   `/telemetry/batch` статус не переведёт (R1).
 - **telemetry cleanup** — раз в сутки удалять телеметрию старше `TELEMETRY_RETENTION_DAYS`.
 
+## Добавлено после платформы
+
+Подробности — [10-fines-scheduling-admin.md](10-fines-scheduling-admin.md).
+
+```
+POST /fines/import              # пакетный импорт по госномеру, идемпотентный
+GET  /fines/import/plates       # номера парка для раннера
+      auth: FINES_IMPORT_TOKEN (узкая область; CORE_API_TOKEN здесь → 403)
+
+GET/POST/PATCH/DELETE /periodic-tasks[/{id}]   # расписания, auth: админ
+GET  /task-runs                                # журнал прогонов, auth: админ
+
+POST /admin/login-link          # бот просит одноразовую ссылку, auth: админ
+GET  /admin/login?token=…       # обмен на сессионную куку
+GET  /admin, POST /admin/schedules[/{id}/…]    # страницы, auth: кука админки
+```
+
+Джобы APScheduler: к досрочиванию команд и чистке телеметрии добавилась
+`cleanup_login_tokens` (раз в сутки). Задачи с настраиваемой частотой живут не здесь,
+а в Celery Beat — признак разделения описан в брифе 10 и в шапке `app/tasks/beat.py`.
+
 ## Клиенты (исходящие HTTP)
 
 - `app/clients/adapter.py` — httpx к tracker-adapter: `send_command(external_id, command)`,

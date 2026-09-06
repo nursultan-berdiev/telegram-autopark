@@ -17,6 +17,7 @@
 | [07-phases.md](07-phases.md) | Порядок исполнения, зависимости, критерии приёмки по фазам |
 | [08-testing.md](08-testing.md) | Стратегия тестов, конвенции, e2e, тесты безопасности |
 | [09-traccar-reference.md](09-traccar-reference.md) | Факты Traccar/H02 для адаптера (из пилота 2026-09-01) |
+| [10-fines-scheduling-admin.md](10-fines-scheduling-admin.md) | Штрафы из carcheck (что выяснено опытом), расписания задач, веб-админка |
 
 ## Фиксированные решения заказчика (не пересматривать без него)
 
@@ -47,7 +48,7 @@
 |---|---|---|
 | Этап 1 (бот аренды) | [PJ-1](https://team.keydev.kg/task-board/task/2294/) + PJ-2…PJ-11 | машины, водители, графики, платежи с ИИ-чеками |
 | Этап 2 (платформа) | [PJ-65](https://team.keydev.kg/task-board/task/2917/) | фазы 0–5 из [07-phases.md](07-phases.md) |
-| Импорт штрафов | [PJ-67](https://team.keydev.kg/task-board/task/2940/) | `POST /fines/import` и раннер [tools/carcheck-runner](../tools/carcheck-runner/) |
+| Импорт штрафов | [PJ-67](https://team.keydev.kg/task-board/task/2940/) | `POST /fines/import`, серверная проверка на Playwright, расписания задач, веб-админка — см. [10](10-fines-scheduling-admin.md) |
 
 Правило: в описании каждого PR — ссылка на задачу трекера и явный scope (номера фаз).
 Ревьюер — AlterEgoNurs.
@@ -60,4 +61,5 @@
 - Никаких эвристик/моков в бизнес-логике: нет данных — стоп и вопрос, не выдумывать.
 - Миграции БД пишем руками, по одной на подзадачу; не трогать чужие ревизии (см. 02).
 - Все факты о Traccar брать из [09-traccar-reference.md](09-traccar-reference.md), не угадывать
-  команды/биты.
+  команды/биты. То же для carcheck.gov.kg — [10-fines-scheduling-admin.md](10-fines-scheduling-admin.md):
+  форма ответа снята с живого сервиса, документации у него нет.
