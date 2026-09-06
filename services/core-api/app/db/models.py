@@ -305,6 +305,8 @@ class Fine(Base):
     __tablename__ = "fines"
     __table_args__ = (
         Index("ix_fines_car_issued", "car_id", "issued_at"),
+        # Список неоплаченных по всему парку — экран «все штрафы».
+        Index("ix_fines_status_issued", "status", "issued_at"),
         # Импорт из внешнего источника идёт по расписанию: без этого повторный
         # прогон завёл бы тот же штраф второй раз.
         Index(
@@ -339,6 +341,24 @@ class Fine(Base):
     )
     source: Mapped[str] = mapped_column(String(32), default="manual", server_default="manual")
     external_ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Подробности нарушения: до 0015 склеивались в note, по которому нельзя было
+    # ни собрать карточку, ни заплатить.
+    article: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    violation_title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    place: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payment_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    protocol_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Срок скидки идёт от вручения постановления. Не вручено — не идёт вовсе,
+    # и discount_until остаётся пустым: выдумывать дату неоткуда.
+    delivery_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    discount_until: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Когда и каким источником штраф видели последний раз. Без этого факт
+    # «пропал из ответа, значит оплачен» нечем объяснить постфактум.
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_seen_source: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    paid_by: Mapped[str | None] = mapped_column(String(16), nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -560,7 +580,18 @@ class TaskRun(Base):
     """
 
     __tablename__ = "task_runs"
-    __table_args__ = (Index("ix_task_runs_task_started", "task", "started_at"),)
+    __table_args__ = (
+        Index("ix_task_runs_task_started", "task", "started_at"),
+        # Один незавершённый прогон на задачу: два одновременных нажатия
+        # «Проверить сейчас» иначе поставили бы в очередь два обхода парка.
+        Index(
+            "uq_task_run_active",
+            "task",
+            unique=True,
+            sqlite_where=text("finished_at IS NULL"),
+            postgresql_where=text("finished_at IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     task: Mapped[str] = mapped_column(String(255))
@@ -578,6 +609,8 @@ class TaskRun(Base):
     )
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Кто запустил прогон кнопкой из бота; у крона пусто.
+    requested_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
 
 class AdminLoginToken(Base):

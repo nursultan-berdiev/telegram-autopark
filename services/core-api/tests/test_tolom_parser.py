@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import copy
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from app.tolom.parser import parse_violations, plate_registered
@@ -115,15 +115,39 @@ def test_parses_both_amounts_and_discount():
     assert fine.discount_days_left == 30
 
 
-def test_note_carries_article_title_and_place():
+def test_details_go_to_their_own_fields():
     """То, ради чего подключён источник: carcheck этого не отдаёт вовсе."""
     fine = parse_violations(REAL_WITH_FINES)[0][0]
 
-    assert "Ст. 187 ч. 1" in fine.note
-    assert "превышение скорости" in fine.note
-    assert "Балыкчы-Каракол" in fine.note
-    # Переводы строк и двойные пробелы из ответа в примечание не уезжают.
-    assert "\n" not in fine.note
+    assert fine.article == "Ст. 187 ч. 1"
+    assert "превышение скорости" in fine.violation_title
+    assert "Балыкчы-Каракол" in fine.place
+    assert fine.payment_code == "1000000000000000001"
+    assert fine.protocol_kind == "bg"
+    # Распознанная запись примечания не заводит: оно для carcheck и ручного ввода.
+    assert fine.note is None
+    # Переводы строк и двойные пробелы из ответа в место не уезжают.
+    assert "\n" not in fine.place
+    assert "  " not in fine.place
+
+
+def test_delivery_date_absent_means_not_handed():
+    """Не вручено — срок скидки не идёт, и выдумывать дату неоткуда."""
+    fine = parse_violations(REAL_WITH_FINES)[0][0]
+
+    assert fine.delivery_date is None
+    assert fine.discount_days_left == 30
+
+
+def test_delivery_date_is_a_day_not_a_moment():
+    import copy
+
+    payload = copy.deepcopy(REAL_WITH_FINES)
+    payload["penalties"]["data"]["bgProtocols"][0]["deliveryDate"] = "2026-09-01T00:00:00"
+
+    fine = parse_violations(payload)[0][0]
+
+    assert fine.delivery_date == date(2026, 9, 1)
 
 
 def test_local_time_is_kept_local():
@@ -196,6 +220,9 @@ def test_unfamiliar_record_keeps_raw_json_in_note():
     assert "не разобрано" in raw.note
     assert "someNewField" in raw.note
     assert raw.amount is None
+    # Вид протокола известен из ключа ответа даже у незнакомой записи —
+    # по нему мы и узнаем, что живой ERPN наконец появился.
+    assert raw.protocol_kind == "erpn"
 
 
 def test_count_mismatch_is_logged(caplog):

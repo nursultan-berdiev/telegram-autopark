@@ -1,7 +1,7 @@
 """DTO штрафов и обслуживания."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import Field
@@ -24,7 +24,20 @@ class FineDTO(DTO):
     paid_at: datetime | None = None
     source: str = "manual"
     external_ref: str | None = None
+    article: str | None = None
+    violation_title: str | None = None
+    place: str | None = None
+    payment_code: str | None = None
+    protocol_kind: str | None = None
+    delivery_date: date | None = None
+    # Пусто, если постановление не вручено: срок скидки тогда не идёт.
+    discount_until: date | None = None
+    last_seen_at: datetime | None = None
+    last_seen_source: str | None = None
+    paid_by: str | None = None
     note: str | None = None
+    # Заполняется только там, где список идёт по нескольким машинам.
+    car_plate: str | None = None
     created_at: datetime | None = None
 
 
@@ -50,6 +63,12 @@ class FineImportItem(DTO):
     discount_days_left: int | None = None
     currency: str | None = Field(default=None, max_length=8)
     issued_at: datetime | None = None
+    article: str | None = Field(default=None, max_length=64)
+    violation_title: str | None = None
+    place: str | None = None
+    payment_code: str | None = Field(default=None, max_length=32)
+    protocol_kind: str | None = Field(default=None, max_length=16)
+    delivery_date: date | None = None
     note: str | None = None
 
 

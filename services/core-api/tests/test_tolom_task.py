@@ -11,13 +11,14 @@ from app.domain import fines as fines_service
 from app.fines_sources import CheckResult, ParsedViolation
 from app.tasks.fines import (
     PlateScan,
-    import_and_alert,
-    money_summary,
+    ScanResult,
+    SyncReport,
     scan_plates,
     summarize,
+    sync_and_alert,
 )
-from app.tasks.fines_tolom import HINT, SOURCE
-from app.tolom.parser import parse_violations
+from app.tasks.fines_tolom import SOURCE
+from app.tolom.parser import expected_counts, parse_violations
 
 UTC = timezone.utc
 
@@ -86,7 +87,9 @@ def _violation(ref, amount="1000", to_pay="300", days=30):
 def test_scan_uses_tolom_parser():
     checker = FakeChecker({"A": CheckResult("A", payload=_payload("R1", "R2"))})
 
-    scan = scan_plates(["A"], checker, pause=_noop, parse=parse_violations)
+    scan = scan_plates(
+        ["A"], checker, pause=_noop, parse=parse_violations, expected=expected_counts
+    )
 
     assert [len(s.violations) for s in scan.scans] == [2]
     assert scan.scans[0].violations[0].amount_to_pay == Decimal("300")
@@ -103,42 +106,14 @@ def test_unregistered_plate_is_collected_not_silently_clean():
         }
     )
 
-    scan = scan_plates(["A", "B"], checker, pause=_noop, parse=parse_violations)
+    scan = scan_plates(
+        ["A", "B"], checker, pause=_noop, parse=parse_violations, expected=expected_counts
+    )
 
     assert scan.unregistered == ["B"]
-    status, detail = summarize(scan, 1)
+    status, detail = summarize(scan, SyncReport(created=1))
     assert status is TaskRunStatus.ok
     assert "нет в реестре: B" in detail
-
-
-# --- суммы в тексте алерта --------------------------------------------------
-
-
-class _Fine:
-    def __init__(self, amount, amount_to_pay=None):
-        self.amount = amount
-        self.amount_to_pay = amount_to_pay
-
-
-def test_money_summary_shows_full_and_discounted():
-    text = money_summary([_Fine(Decimal("1000"), Decimal("300")), _Fine(Decimal("1000"), Decimal("300"))])
-
-    assert text == " на 2000 сом (со скидкой 600 сом)"
-
-
-def test_money_summary_marks_partially_known_sums():
-    """Часть штрафов без суммы: «на 1000» было бы неправдой."""
-    text = money_summary([_Fine(Decimal("1000"), Decimal("300")), _Fine(None)])
-
-    assert "не менее чем на 1000 сом" in text
-
-
-def test_money_summary_is_empty_when_nothing_known():
-    assert money_summary([_Fine(None), _Fine(None)]) == ""
-
-
-def test_money_summary_without_discount_shows_one_number():
-    assert money_summary([_Fine(Decimal("1000"))]) == " на 1000 сом"
 
 
 # --- импорт -----------------------------------------------------------------
@@ -147,8 +122,9 @@ def test_money_summary_without_discount_shows_one_number():
 async def test_import_saves_both_amounts(session):
     car = await _car(session)
 
-    await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("R1")])], source=SOURCE, hint=HINT
+    await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("R1")], expected=1)]),
+        source=SOURCE,
     )
 
     fines = await fines_service.list_fines(session, car.id)
@@ -163,34 +139,41 @@ async def test_import_saves_both_amounts(session):
 async def test_alert_text_carries_sums(session):
     car = await _car(session)
 
-    await import_and_alert(
+    await sync_and_alert(
         session,
-        [PlateScan(car.plate, [_violation("R1"), _violation("R2")])],
+        ScanResult(
+            scans=[PlateScan(car.plate, [_violation("R1"), _violation("R2")], expected=2)]
+        ),
         source=SOURCE,
-        hint=HINT,
     )
 
     alerts = await alerts_domain.list_alerts(session, status="open")
     assert alerts[0].type is AlertType.new_fine
-    text = alerts[0].payload["text"]
-    assert "новых штрафов: 2" in text
-    assert "на 2000 сом (со скидкой 600 сом)" in text
-    assert "tolom.kg" in text
+    # Текст — только шапка: сами штрафы бот покажет кнопками, дозапросив по id.
+    assert alerts[0].payload["text"] == "новых штрафов 2:"
+    assert len(alerts[0].payload["fine_ids"]) == 2
 
 
 async def test_fines_from_both_sources_do_not_double(session):
     """Один и тот же штраф из carcheck и из tolom — один номер постановления."""
     car = await _car(session)
-    await import_and_alert(
+    await sync_and_alert(
         session,
-        [PlateScan(car.plate, [ParsedViolation("R1", datetime(2026, 8, 30, tzinfo=UTC), None, "AFP")])],
-        source="carcheck",
-        hint="carcheck",
+        ScanResult(
+            scans=[
+                PlateScan(
+                    car.plate,
+                    [ParsedViolation("R1", datetime(2026, 8, 30, tzinfo=UTC), None, "AFP")],
+                )
+            ]
+        ),
     )
 
-    created = await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("R1")])], source=SOURCE, hint=HINT
+    report = await sync_and_alert(
+        session,
+        ScanResult(scans=[PlateScan(car.plate, [_violation("R1")], expected=1)]),
+        source=SOURCE,
     )
 
-    assert created == 0
+    assert report.created == 0
     assert len(await fines_service.list_fines(session, car.id)) == 1

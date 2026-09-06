@@ -45,6 +45,23 @@ async def list_alerts(
     return [await _to_dto(session, alert) for alert in alerts]
 
 
+@router.get("/{alert_id}", response_model=AlertDTO)
+async def get_alert(
+    alert_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> AlertDTO:
+    """Один алерт: по нему бот листает страницы списка новых штрафов.
+
+    Набор id в callback_data не влезает, а после перезапуска бота памяти о нём
+    не остаётся — источником остаётся сам алерт.
+    """
+    alert = await alerts_domain.get_alert(session, alert_id)
+    if alert is None:
+        raise NotFound("алерт не найден")
+    return await _to_dto(session, alert)
+
+
 @router.post("/{alert_id}/ack", response_model=AlertDTO)
 async def ack_alert(
     alert_id: int,

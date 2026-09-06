@@ -11,8 +11,12 @@ from app.db.models import Fine
 from app.db.session import get_session
 from app.domain import cars as cars_service
 from app.domain import fines as fines_service
-from app.errors import NotFound
-from contracts import FineCreate, FineDTO, FineImportItem, FineImportResult
+from app.domain import periodic as periodic_service
+from app.errors import DomainError, NotFound
+from app.routers.periodic import run_dto
+from app.tasks import fines_tolom
+from app.tasks.celery_app import celery_app
+from contracts import FineCreate, FineDTO, FineImportItem, FineImportResult, TaskRunDTO
 
 router = APIRouter()
 
@@ -24,7 +28,7 @@ def _utc(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _fine_dto(fine: Fine) -> FineDTO:
+def _fine_dto(fine: Fine, plate: str | None = None) -> FineDTO:
     return FineDTO(
         id=fine.id,
         car_id=fine.car_id,
@@ -38,7 +42,18 @@ def _fine_dto(fine: Fine) -> FineDTO:
         paid_at=_utc(fine.paid_at),
         source=fine.source,
         external_ref=fine.external_ref,
+        article=fine.article,
+        violation_title=fine.violation_title,
+        place=fine.place,
+        payment_code=fine.payment_code,
+        protocol_kind=fine.protocol_kind,
+        delivery_date=fine.delivery_date,
+        discount_until=fine.discount_until,
+        last_seen_at=_utc(fine.last_seen_at),
+        last_seen_source=fine.last_seen_source,
+        paid_by=fine.paid_by,
         note=fine.note,
+        car_plate=plate,
         created_at=_utc(fine.created_at),
     )
 
@@ -125,6 +140,65 @@ async def import_car_fines(
         unknown_plates=outcome.unknown_plates,
         ambiguous_plates=outcome.ambiguous_plates,
     )
+
+
+@router.get("/fines", response_model=list[FineDTO])
+async def list_fleet_fines(
+    only_unpaid: bool = True,
+    car_id: int | None = None,
+    limit: int = 200,
+    session: AsyncSession = Depends(get_session),
+    _: int = Depends(require_admin_actor),
+) -> list[FineDTO]:
+    """Штрафы всего парка одним запросом — экран «все штрафы» у админа."""
+    rows = await fines_service.list_fleet_fines(
+        session, car_id=car_id, only_unpaid=only_unpaid, limit=min(limit, 500)
+    )
+    return [_fine_dto(fine, plate) for fine, plate in rows]
+
+
+@router.post("/fines/check", response_model=TaskRunDTO, status_code=202)
+async def check_fines_now(
+    session: AsyncSession = Depends(get_session),
+    actor: int = Depends(require_admin_actor),
+) -> TaskRunDTO:
+    """Ставит проверку парка в очередь и отдаёт прогон, за которым следить.
+
+    Строка прогона заводится ЗДЕСЬ, а не в воркере: иначе свой прогон не
+    отличить от кронового, начавшегося в ту же секунду.
+    """
+    # Второй тап не должен ни копить очередь при concurrency=1, ни лишний раз
+    # ходить в госсервис. Отсекает это уникальный индекс внутри start_run, а не
+    # проверка перед вставкой: между проверкой и вставкой помещается второй
+    # запрос.
+    run, created = await periodic_service.start_run(
+        session, task=fines_tolom.NAME, requested_by=actor
+    )
+    if not created:
+        return run_dto(run)
+    try:
+        celery_app.send_task(
+            fines_tolom.NAME, kwargs={"run_id": run.id}, retry=False
+        )
+    except Exception as exc:  # брокер лежит — прогон не начнётся никогда
+        run.detail = f"очередь недоступна: {type(exc).__name__}"
+        run.finished_at = datetime.now(timezone.utc)
+        await session.commit()
+        raise DomainError("очередь задач недоступна", status_code=503) from exc
+    return run_dto(run)
+
+
+@router.get("/fines/{fine_id}", response_model=FineDTO)
+async def get_car_fine(
+    fine_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> FineDTO:
+    """Карточка штрафа — только из нашей БД, без похода в сервис."""
+    found = await fines_service.get_fine_with_plate(session, fine_id)
+    if found is None:
+        raise NotFound("штраф не найден")
+    return _fine_dto(*found)
 
 
 @router.post("/fines/{fine_id}/pay", response_model=FineDTO)
