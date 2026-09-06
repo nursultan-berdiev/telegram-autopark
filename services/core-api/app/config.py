@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Раннер живёт в браузере владельца — самой ненадёжной поверхности,
     # и мастер-ключ ему давать нельзя.
     fines_import_token: str = Field(default="", alias="FINES_IMPORT_TOKEN")
+    # --- Фоновые задачи -------------------------------------------------------
+    redis_url: str = Field(default="redis://redis:6379/0", alias="REDIS_URL")
+
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")
 
@@ -87,6 +90,11 @@ class Settings(BaseSettings):
 
     def is_admin(self, user_id: int | None) -> bool:
         return user_id is not None and user_id in self.admin_ids
+
+
+def sync_database_url(url: str) -> str:
+    """Celery работает вне event loop, asyncpg там неприменим."""
+    return url.replace("+asyncpg", "+psycopg").replace("+aiosqlite", "")
 
 
 settings = Settings()  # type: ignore[call-arg]

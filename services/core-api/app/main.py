@@ -23,6 +23,7 @@ from app.routers import (
     invitations,
     me,
     payments,
+    periodic,
     reminders,
     reports,
     rules,
@@ -74,3 +75,4 @@ app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 app.include_router(commands.router, tags=["commands"])
 app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
+app.include_router(periodic.router, tags=["periodic"])

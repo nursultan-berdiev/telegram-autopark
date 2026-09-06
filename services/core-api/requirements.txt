@@ -10,6 +10,13 @@ APScheduler==3.11.0
 python-dotenv==1.0.1
 python-multipart==0.0.20
 
+# Расписания фоновых задач: beat читает таблицу, воркер исполняет.
+# psycopg — синхронный драйвер: celery работает вне event loop.
+celery[redis]==5.4.0
+redis==5.2.1
+croniter==6.0.0
+psycopg[binary]==3.2.3
+
 # dev / тесты
 pytest==8.3.4
 pytest-asyncio==0.25.0

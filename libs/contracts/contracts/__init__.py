@@ -19,6 +19,10 @@ from .fleet import (
     FineImportResult,
     MaintenanceDTO,
     MaintenanceUpsert,
+    PeriodicTaskDTO,
+    PeriodicTaskPatch,
+    PeriodicTaskUpsert,
+    TaskRunDTO,
 )
 from .payments import (
     PaymentCreate,
@@ -60,4 +64,5 @@ __all__ = [
     "RuleDTO", "RuleUpsert", "AlertDTO",
     "FineDTO", "FineCreate", "FineImportItem", "FineImportResult",
     "MaintenanceDTO", "MaintenanceUpsert",
+    "PeriodicTaskDTO", "PeriodicTaskUpsert", "PeriodicTaskPatch", "TaskRunDTO",
 ]

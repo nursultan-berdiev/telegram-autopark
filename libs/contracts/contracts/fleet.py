@@ -60,6 +60,58 @@ class FineImportResult(DTO):
     ambiguous_plates: list[str] = []
 
 
+class PeriodicTaskDTO(DTO):
+    """Расписание фоновой задачи, как его видит админка."""
+
+    id: int
+    name: str
+    task: str
+    interval_seconds: int | None = None
+    crontab: str | None = None
+    args: dict | None = None
+    enabled: bool = True
+    last_run_at: datetime | None = None
+    total_run_count: int = 0
+    created_at: datetime | None = None
+
+
+class PeriodicTaskUpsert(DTO):
+    name: str
+    task: str
+    interval_seconds: int | None = None
+    crontab: str | None = None
+    args: dict | None = None
+    enabled: bool = True
+
+
+class PeriodicTaskPatch(DTO):
+    """Частичное обновление: незаданные поля не трогаются."""
+
+    name: str | None = None
+    task: str | None = None
+    interval_seconds: int | None = None
+    crontab: str | None = None
+    args: dict | None = None
+    enabled: bool | None = None
+
+
+class TaskRunDTO(DTO):
+    """Исход прогона.
+
+    `refused` — сервис ответил отказом (капча, блокировка); это не то же
+    самое, что `ok` с пустым результатом, и путать их нельзя.
+    """
+
+    id: int
+    task: str
+    periodic_task_id: int | None = None
+    status: str
+    started_at: datetime
+    finished_at: datetime | None = None
+    detail: str | None = None
+    payload: dict | None = None
+
+
 class MaintenanceDTO(DTO):
     id: int
     car_id: int

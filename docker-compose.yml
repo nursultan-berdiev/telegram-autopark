@@ -23,6 +23,21 @@ services:
       timeout: 5s
       retries: 10
 
+  # Брокер в отдельной сети и с паролем: очередь celery — это исполнение
+  # кода, и доступ к ней в обход HTTP-слоя обходит проверку прав админа.
+  redis:
+    image: redis:7-alpine
+    container_name: fleet_redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD не задан}"]
+    networks:
+      - broker
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   core-api:
     build:
       context: .
@@ -37,6 +52,7 @@ services:
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
       GATEWAY_MODEL: ${GATEWAY_MODEL:-sonnet}
       ADAPTER_URL: http://tracker-adapter:8001
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -46,6 +62,7 @@ services:
       - files:/app/storage
     networks:
       - default
+      - broker
       - claude_net
 
   tracker-adapter:
@@ -63,6 +80,50 @@ services:
       - default
       - traccar_net
 
+  # Воркер и beat крутят тот же образ, что и core-api: своя копия моделей
+  # разошлась бы с доменом на первой же миграции.
+  celery-worker:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile
+    container_name: fleet_celery_worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tg_auto:tg_auto@postgres:5432/tg_auto
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "worker", "-l", "info", "--concurrency", "1"]
+    networks:
+      - default
+      - broker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - files:/app/storage
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: services/core-api/Dockerfile
+    container_name: fleet_celery_beat
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://tg_auto:tg_auto@postgres:5432/tg_auto
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    command: ["celery", "-A", "app.tasks.celery_app:celery_app", "beat", "-l", "info"]
+    networks:
+      - default
+      - broker
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   bot:
     build:
       context: .
@@ -76,6 +137,9 @@ services:
       - core-api
 
 networks:
+  # Сеть брокера: в ней только core-api, воркер и beat. Бот и адаптер
+  # к очереди задач отношения не имеют.
+  broker:
   claude_net:
     external: true
     name: claude_net

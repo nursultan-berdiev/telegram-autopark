@@ -19,3 +19,10 @@ class NotFound(DomainError):
 class Conflict(DomainError):
     def __init__(self, detail: str) -> None:
         super().__init__(detail, status_code=409)
+
+
+class Validation(DomainError):
+    """Некорректные данные запроса: 422, как у pydantic."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(detail, status_code=422)
