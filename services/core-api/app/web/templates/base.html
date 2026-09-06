@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Автопарк — админка{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.5 system-ui, sans-serif; margin: 0; padding: 24px;
+           max-width: 1000px; margin-inline: auto; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    h2 { font-size: 17px; margin: 32px 0 10px; }
+    .muted { color: #6b7280; font-size: 13px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e5e7eb; }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: #6b7280; }
+    form.inline { display: inline; }
+    input[type=text], input[type=number], select { font: inherit; padding: 5px 7px;
+      border: 1px solid #d1d5db; border-radius: 6px; }
+    button { font: inherit; padding: 5px 11px; border: 1px solid #d1d5db;
+      border-radius: 6px; background: #f9fafb; cursor: pointer; }
+    button.danger { color: #b91c1c; }
+    .banner { padding: 10px 12px; border-radius: 8px; background: #fef3c7;
+      margin: 12px 0; }
+    .banner.info { background: #d1fae5; }
+    .ok { color: #047857; } .refused { color: #b45309; } .failed { color: #b91c1c; }
+    .card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; margin-top: 12px; }
+    @media (prefers-color-scheme: dark) {
+      th, td, .card { border-color: #374151; }
+      button { background: #1f2937; border-color: #374151; color: inherit; }
+      .banner { background: #422006; }
+      .banner.info { background: #064e3b; }
+    }
+  </style>
+</head>
+<body>
+  {% block body %}{% endblock %}
+</body>
+</html>

@@ -14,6 +14,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.config import settings
 from app.db.base import async_session_maker
 from app.domain import commands as commands_domain
+from app.domain import admin_auth
 from app.domain import telemetry as telemetry_domain
 from app.rules import engine
 
@@ -44,6 +45,14 @@ async def cleanup_telemetry() -> None:
             log.info("телеметрия: удалено %d старых точек", removed)
 
 
+async def cleanup_login_tokens() -> None:
+    """Использованные и просроченные ссылки в админку иначе копятся вечно."""
+    async with async_session_maker() as session:
+        removed = await admin_auth.purge_expired(session)
+        if removed:
+            log.info("админка: удалено %d просроченных ссылок входа", removed)
+
+
 def start_jobs() -> AsyncIOScheduler:
     """Досрочивание команд и чистка идут всегда.
 
@@ -71,6 +80,12 @@ def start_jobs() -> AsyncIOScheduler:
         cleanup_telemetry,
         IntervalTrigger(hours=CLEANUP_INTERVAL_HOURS),
         id="telemetry_cleanup",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        cleanup_login_tokens,
+        IntervalTrigger(hours=CLEANUP_INTERVAL_HOURS),
+        id="login_tokens_cleanup",
         replace_existing=True,
     )
     scheduler.start()

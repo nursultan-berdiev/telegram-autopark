@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Вход в админку{% endblock %}
+{% block body %}
+  <h1>Нужен вход</h1>
+  <p class="muted">
+    Откройте бота, нажмите «Админка» и перейдите по свежей ссылке.
+    Ссылка одноразовая и живёт {{ (ttl.total_seconds() // 60) | int }} минут.
+  </p>
+{% endblock %}

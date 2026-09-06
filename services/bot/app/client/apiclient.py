@@ -204,6 +204,9 @@ class ApiClient:
     async def payments(self, driver_id: int) -> list[dict]:
         return await self._request("GET", f"/drivers/{driver_id}/payments")
 
+    async def admin_login_link(self, *, tg_id: int) -> dict:
+        return await self._request("POST", "/admin/login-link", tg_id=tg_id)
+
     # --- Отчёты и ассистент --------------------------------------------------
     async def report_cars_drivers(self) -> list[dict]:
         return await self._request("GET", "/reports/cars-drivers")

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block body %}
+  <h1>Расписания фоновых задач</h1>
+  <p class="muted">
+    Частота меняется здесь и вступает в силу без перезапуска — планировщик
+    перечитывает таблицу раз в 30 секунд.
+    <a href="/admin/logout">выйти</a>
+  </p>
+
+  {% if error %}<div class="banner">{{ error }}</div>{% endif %}
+  {% if msg %}<div class="banner info">{{ msg }}</div>{% endif %}
+
+  <table>
+    <tr>
+      <th>Название</th><th>Задача</th><th>Период</th><th>Состояние</th>
+      <th>Последний запуск</th><th>Запусков</th><th></th>
+    </tr>
+    {% for t in tasks %}
+    <tr>
+      <td>{{ t.name }}</td>
+      <td class="muted">{{ known_tasks.get(t.task, t.task) }}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/schedules/{{ t.id }}/period">
+          <input type="number" name="interval_seconds" min="60" style="width: 90px"
+                 value="{{ t.interval_seconds or '' }}" placeholder="сек">
+          <input type="text" name="crontab" style="width: 110px"
+                 value="{{ t.crontab or '' }}" placeholder="0 9 * * *">
+          <button>Сохранить</button>
+        </form>
+      </td>
+      <td>{{ 'включено' if t.enabled else 'выключено' }}</td>
+      <td class="muted">{{ utc(t.last_run_at).strftime('%d.%m %H:%M') if t.last_run_at else '—' }}</td>
+      <td>{{ t.total_run_count }}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/schedules/{{ t.id }}/toggle">
+          <button>{{ 'Выключить' if t.enabled else 'Включить' }}</button>
+        </form>
+        <form class="inline" method="post" action="/admin/schedules/{{ t.id }}/run">
+          <button>Запустить</button>
+        </form>
+        <form class="inline" method="post" action="/admin/schedules/{{ t.id }}/delete">
+          <button class="danger">Удалить</button>
+        </form>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" class="muted">Расписаний пока нет.</td></tr>
+    {% endfor %}
+  </table>
+
+  <div class="card">
+    <strong>Новое расписание</strong>
+    <p class="muted">Задайте либо интервал в секундах, либо строку crontab — что-то одно.</p>
+    <form method="post" action="/admin/schedules">
+      <input type="text" name="name" placeholder="Название" required>
+      <select name="task">
+        {% for value, label in known_tasks.items() %}
+        <option value="{{ value }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+      <input type="number" name="interval_seconds" min="60" placeholder="интервал, сек" style="width: 130px">
+      <input type="text" name="crontab" placeholder="0 9 * * *" style="width: 120px">
+      <button>Добавить</button>
+    </form>
+  </div>
+
+  <h2>Последние прогоны</h2>
+  <table>
+    <tr><th>Задача</th><th>Исход</th><th>Начало</th><th>Подробности</th></tr>
+    {% for r in runs %}
+    <tr>
+      <td class="muted">{{ known_tasks.get(r.task, r.task) }}</td>
+      <td class="{{ r.status.value }}">
+        {% if r.status.value == 'ok' %}успех
+        {% elif r.status.value == 'refused' %}сервис отказал
+        {% else %}сбой{% endif %}
+      </td>
+      <td class="muted">{{ utc(r.started_at).strftime('%d.%m %H:%M') }}</td>
+      <td class="muted">{{ r.detail or '' }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Прогонов ещё не было.</td></tr>
+    {% endfor %}
+  </table>
+{% endblock %}

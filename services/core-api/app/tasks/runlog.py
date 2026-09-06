@@ -13,7 +13,7 @@ from typing import Iterator
 
 from sqlalchemy.orm import Session
 
-from app.db.models import TaskRun, TaskRunStatus
+from app.db.models import PeriodicTask, TaskRun, TaskRunStatus
 from app.db.sync_engine import sync_engine
 
 # Драйверы охотно вкладывают строку подключения в текст ошибки, а журнал
@@ -48,6 +48,15 @@ def record_run(task: str, periodic_task_id: int | None = None) -> Iterator[TaskR
             run.detail = _safe_detail(exc)
             raise
         finally:
-            run.finished_at = datetime.now(timezone.utc)
+            finished = datetime.now(timezone.utc)
+            run.finished_at = finished
             session.add(run)
+            if periodic_task_id is not None:
+                # Счётчик обновляет исполнитель, а не планировщик: иначе
+                # запуск из админки не отражается в строке расписания —
+                # прогон в журнале есть, а «последний запуск» пуст.
+                row = session.get(PeriodicTask, periodic_task_id)
+                if row is not None:
+                    row.last_run_at = finished
+                    row.total_run_count = (row.total_run_count or 0) + 1
             session.commit()

@@ -573,3 +573,24 @@ class TaskRun(Base):
     )
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class AdminLoginToken(Base):
+    """Одноразовая ссылка для входа в веб-админку.
+
+    Пароля у админов нет — личность подтверждает бот, а он уже знает
+    Telegram-id. Токен хранится хешем: утечка таблицы не должна давать вход.
+    """
+
+    __tablename__ = "admin_login_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tg_user_id: Mapped[int] = mapped_column(BigInteger)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     fines_import_token: str = Field(default="", alias="FINES_IMPORT_TOKEN")
     # --- Фоновые задачи -------------------------------------------------------
     redis_url: str = Field(default="redis://redis:6379/0", alias="REDIS_URL")
+
+    # --- Веб-админка ----------------------------------------------------------
+    # Секрет подписи сессионной куки. Пустой = админка выключена: поднимать
+    # её с предсказуемой подписью опаснее, чем не поднимать вовсе.
+    admin_session_secret: str = Field(default="", alias="ADMIN_SESSION_SECRET")
+    # Внешний адрес админки — из него бот собирает ссылку для входа.
+    admin_base_url: str = Field(default="", alias="ADMIN_BASE_URL")
     # Пауза между номерами: всплеск запросов роняет оценку reCAPTCHA,
     # и сервис начинает отказывать.
     carcheck_pause_seconds: float = Field(default=7.0, alias="CARCHECK_PAUSE_SECONDS")
@@ -93,6 +100,10 @@ class Settings(BaseSettings):
         if self.invite_ttl_minutes > 0:
             return f"{self.invite_ttl_minutes} мин"
         return f"{self.invite_ttl_hours} ч"
+
+    @property
+    def admin_web_enabled(self) -> bool:
+        return bool(self.admin_session_secret and self.admin_base_url)
 
     def is_admin(self, user_id: int | None) -> bool:
         return user_id is not None and user_id in self.admin_ids
