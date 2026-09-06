@@ -1,53 +1,13 @@
 """Экраны телеметрии, трекера, штрафов и ТО."""
-from dataclasses import dataclass, field
-from typing import Any
-
-
 from app.callbacks import FleetCB
 from app.handlers import fleet
-from tests.conftest import ADMIN_ID, FakeApi
-
-
-@dataclass
-class FakeMessage:
-    answers: list[str] = field(default_factory=list)
-    from_user: Any = None
-
-    async def answer(self, text: str, **kwargs: Any) -> None:
-        self.answers.append(text)
-
-
-@dataclass
-class FakeUser:
-    id: int = ADMIN_ID
-
-
-@dataclass
-class FakeCallback:
-    message: FakeMessage = field(default_factory=FakeMessage)
-    from_user: FakeUser = field(default_factory=FakeUser)
-
-    async def answer(self, text: str | None = None, **kwargs: Any) -> None:
-        return None
-
-
-class FakeState:
-    def __init__(self) -> None:
-        self.data: dict = {}
-        self.state = None
-        self.cleared = False
-
-    async def set_state(self, state) -> None:
-        self.state = state
-
-    async def update_data(self, **kwargs) -> None:
-        self.data.update(kwargs)
-
-    async def get_data(self) -> dict:
-        return self.data
-
-    async def clear(self) -> None:
-        self.cleared = True
+from tests.conftest import (
+    FakeApi,
+    FakeCallback,
+    FakeMessage,
+    FakeState,
+    FakeUser,
+)
 
 
 def test_state_text_shows_offline_and_untrusted_odometer():

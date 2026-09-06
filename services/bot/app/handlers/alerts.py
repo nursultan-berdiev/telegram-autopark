@@ -66,7 +66,7 @@ async def block_engine(
         result = await api.command(
             callback_data.car_id,
             type="engine_block",
-            requested_by=callback.from_user.id,
+            tg_id=callback.from_user.id,
             alert_id=callback_data.alert_id or None,
         )
     except ApiError as exc:
@@ -110,7 +110,7 @@ async def unblock_engine(
         result = await api.command(
             callback_data.car_id,
             type="engine_unblock",
-            requested_by=callback.from_user.id,
+            tg_id=callback.from_user.id,
             alert_id=callback_data.alert_id or None,
         )
     except ApiError as exc:

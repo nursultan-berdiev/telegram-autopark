@@ -46,7 +46,7 @@ async def pick_car(
         return
 
     try:
-        invitation = await api.create_invitation(car["id"], created_by=query.from_user.id)
+        invitation = await api.create_invitation(car["id"], tg_id=query.from_user.id)
     except ApiError as exc:
         await query.answer(exc.human, show_alert=True)
         return

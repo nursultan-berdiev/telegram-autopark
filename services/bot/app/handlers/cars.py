@@ -105,7 +105,10 @@ async def add_car_photo(message: Message, state: FSMContext, api: ApiClient) -> 
     # Файла на диске у бота больше нет — храним только file_id, photo_path не шлём.
     try:
         car = await api.create_car(
-            plate=data["plate"], model=data.get("model"), photo_file_id=file_id
+            tg_id=message.from_user.id,
+            plate=data["plate"],
+            model=data.get("model"),
+            photo_file_id=file_id,
         )
     except ApiError as exc:
         await message.answer(exc.human)
@@ -195,7 +198,7 @@ async def delete_car_confirm(
         return
 
     try:
-        await api.delete_car(car["id"])
+        await api.delete_car(car["id"], tg_id=query.from_user.id)
     except ApiError as exc:
         await query.answer(exc.human, show_alert=True)
         return

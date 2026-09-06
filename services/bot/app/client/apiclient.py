@@ -70,6 +70,27 @@ class ApiClient:
             await self._client.aclose()
             self._client = None
 
+    async def _actor_request(
+        self,
+        method: str,
+        path: str,
+        *,
+        tg_id: int,
+        params: dict | None = None,
+        json: Any = None,
+        files: Any = None,
+    ) -> Any:
+        """Запрос от имени человека: актор обязателен на уровне сигнатуры.
+
+        core-api проверяет админа по `X-TG-User-Id` на каждом изменяющем
+        маршруте, и забытый заголовок означает 403 и молча неработающую
+        кнопку. Отдельная обёртка без значения по умолчанию делает пропуск
+        ошибкой типов, а не находкой в проде.
+        """
+        return await self._request(
+            method, path, params=params, json=json, files=files, tg_id=tg_id
+        )
+
     async def _request(
         self,
         method: str,
@@ -120,12 +141,13 @@ class ApiClient:
     async def create_car(
         self,
         *,
+        tg_id: int,
         plate: str,
         model: str | None = None,
         photo_file_id: str | None = None,
         photo_path: str | None = None,
     ) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "POST",
             "/cars",
             json={
@@ -134,10 +156,11 @@ class ApiClient:
                 "photo_file_id": photo_file_id,
                 "photo_path": photo_path,
             },
+            tg_id=tg_id,
         )
 
-    async def delete_car(self, car_id: int) -> None:
-        await self._request("DELETE", f"/cars/{car_id}")
+    async def delete_car(self, car_id: int, *, tg_id: int) -> None:
+        await self._actor_request("DELETE", f"/cars/{car_id}", tg_id=tg_id)
 
     # --- Водители ------------------------------------------------------------
     async def drivers(self, *, active: bool = True) -> list[dict]:
@@ -149,16 +172,21 @@ class ApiClient:
     async def register_driver(self, **payload: Any) -> dict:
         return await self._request("POST", "/drivers/register", json=payload)
 
-    async def fire_driver(self, driver_id: int, *, tg_id: int | None = None) -> dict:
-        return await self._request("POST", f"/drivers/{driver_id}/fire", tg_id=tg_id)
+    async def fire_driver(self, driver_id: int, *, tg_id: int) -> dict:
+        return await self._actor_request(
+            "POST", f"/drivers/{driver_id}/fire", tg_id=tg_id
+        )
 
     # --- Приглашения ---------------------------------------------------------
-    async def create_invitation(self, car_id: int, *, created_by: int) -> dict:
-        return await self._request(
+    async def create_invitation(self, car_id: int, *, tg_id: int) -> dict:
+        # В теле поле называется по-доменному (кто выдал приглашение), но для
+        # клиента это тот же актор: два имени у одного значения — причина, по
+        # которой пропуск заголовка искали глазами.
+        return await self._actor_request(
             "POST",
             "/invitations",
-            json={"car_id": car_id, "created_by": created_by},
-            tg_id=created_by,
+            json={"car_id": car_id, "created_by": tg_id},
+            tg_id=tg_id,
         )
 
     async def resolve_invitation(self, code: str) -> dict:
@@ -172,12 +200,13 @@ class ApiClient:
         self,
         driver_id: int,
         *,
+        tg_id: int,
         period: str,
         amount: Decimal,
         next_due_date: datetime,
         interval_days: int | None = None,
     ) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "PUT",
             f"/drivers/{driver_id}/schedule",
             json={
@@ -186,6 +215,7 @@ class ApiClient:
                 "next_due_date": next_due_date,
                 "interval_days": interval_days,
             },
+            tg_id=tg_id,
         )
 
     # --- Платежи -------------------------------------------------------------
@@ -205,7 +235,7 @@ class ApiClient:
         return await self._request("GET", f"/drivers/{driver_id}/payments")
 
     async def admin_login_link(self, *, tg_id: int) -> dict:
-        return await self._request("POST", "/admin/login-link", tg_id=tg_id)
+        return await self._actor_request("POST", "/admin/login-link", tg_id=tg_id)
 
     # --- Отчёты и ассистент --------------------------------------------------
     async def report_cars_drivers(self) -> list[dict]:
@@ -266,12 +296,13 @@ class ApiClient:
         return await self._request("GET", f"/cars/{car_id}/tracker")
 
     async def set_tracker(
-        self, car_id: int, *, external_id: str, provider: str = "traccar"
+        self, car_id: int, *, tg_id: int, external_id: str, provider: str = "traccar"
     ) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "PUT",
             f"/cars/{car_id}/tracker",
             json={"provider": provider, "external_id": external_id},
+            tg_id=tg_id,
         )
 
     # --- Штрафы и ТО ---------------------------------------------------------
@@ -279,23 +310,23 @@ class ApiClient:
         return await self._request("GET", f"/cars/{car_id}/fines")
 
     async def add_fine(self, car_id: int, *, tg_id: int, **payload: Any) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "POST", f"/cars/{car_id}/fines", json=payload, tg_id=tg_id
         )
 
     async def pay_fine(self, fine_id: int, *, tg_id: int) -> dict:
-        return await self._request("POST", f"/fines/{fine_id}/pay", tg_id=tg_id)
+        return await self._actor_request("POST", f"/fines/{fine_id}/pay", tg_id=tg_id)
 
     async def maintenance(self, car_id: int) -> list[dict]:
         return await self._request("GET", f"/cars/{car_id}/maintenance")
 
     async def set_maintenance(self, car_id: int, *, tg_id: int, **payload: Any) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "PUT", f"/cars/{car_id}/maintenance", json=payload, tg_id=tg_id
         )
 
     async def maintenance_done(self, car_id: int, mtype: str, *, tg_id: int) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "POST", f"/cars/{car_id}/maintenance/{mtype}/done", tg_id=tg_id
         )
 
@@ -310,13 +341,13 @@ class ApiClient:
         return await self._request("POST", f"/alerts/{alert_id}/resolve")
 
     async def command(
-        self, car_id: int, *, type: str, requested_by: int, alert_id: int | None = None
+        self, car_id: int, *, type: str, tg_id: int, alert_id: int | None = None
     ) -> dict:
-        return await self._request(
+        return await self._actor_request(
             "POST",
             f"/cars/{car_id}/commands",
-            json={"type": type, "requested_by": requested_by, "alert_id": alert_id},
-            tg_id=requested_by,
+            json={"type": type, "requested_by": tg_id, "alert_id": alert_id},
+            tg_id=tg_id,
         )
 
     async def commands(self, car_id: int) -> list[dict]:
