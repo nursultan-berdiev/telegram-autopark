@@ -118,7 +118,9 @@ async def tracker_set(message: Message, api: ApiClient, state: FSMContext) -> No
     data = await state.get_data()
     await state.clear()
     try:
-        tracker = await api.set_tracker(data["car_id"], external_id=external_id)
+        tracker = await api.set_tracker(
+            data["car_id"], tg_id=message.from_user.id, external_id=external_id
+        )
     except ApiError as exc:
         await message.answer(f"Не удалось привязать: {exc.human}")
         return
