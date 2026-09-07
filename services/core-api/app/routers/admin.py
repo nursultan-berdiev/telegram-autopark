@@ -30,7 +30,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent
 # Задачи, которые вообще разрешено ставить в расписание. Свободный ввод имени
 # означал бы запуск произвольной точки входа из формы в браузере.
 KNOWN_TASKS = {
-    "app.tasks.fines.check_fines": "Проверка штрафов по парку",
+    "app.tasks.fines_tolom.check_fines_tolom": "Проверка штрафов по парку (tolom.kg, с суммами)",
+    "app.tasks.fines.check_fines": "Проверка штрафов по парку (carcheck.gov.kg, запасной)",
     "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
 }
 

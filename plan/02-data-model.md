@@ -101,12 +101,12 @@ updated_at      DateTime(tz)
 id           int PK
 car_id       int FK→cars.id CASCADE, idx
 driver_id    int FK→drivers.id SET NULL|None   # кто был за рулём (если известно)
-amount       Numeric(12,2)|None
+amount       Numeric(12,2)|None     # полная сумма
 currency     str(8)|None            # как в чеках — свободная строка, не конвертируем
 issued_at    DateTime(tz)           # дата нарушения/штрафа
 status       Enum FineStatus{unpaid, paid} = unpaid   # чтобы правило fines_count могло resolve
 paid_at      DateTime(tz)|None
-source       str(32) = "manual"     # manual|import(будущее)
+source       str(32) = "manual"     # manual|tolom|carcheck
 external_ref str(64)|None           # номер постановления и т.п.
 note         Text|None
 created_by   BigInt                 # tg_id админа

@@ -323,6 +323,11 @@ class Fine(Base):
         ForeignKey("drivers.id", ondelete="SET NULL"), nullable=True
     )
     amount: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    # Со скидкой платят меньше и только в срок. Полная сумма остаётся в amount:
+    # хранить одну цифру нельзя — после истечения скидки она станет неверной,
+    # а пересчитать её будет нечем.
+    amount_to_pay: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True)
+    discount_days_left: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
     issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     # Без статуса правило «N штрафов» не смогло бы закрыться никогда.
