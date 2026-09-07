@@ -43,7 +43,7 @@ def _task_dto(row: PeriodicTask) -> PeriodicTaskDTO:
     )
 
 
-def _run_dto(row: TaskRun) -> TaskRunDTO:
+def run_dto(row: TaskRun) -> TaskRunDTO:
     return TaskRunDTO(
         id=row.id,
         task=row.task,
@@ -106,6 +106,19 @@ async def delete_periodic_task(
         raise NotFound(f"расписание {task_id} не найдено")
 
 
+@router.get("/task-runs/{run_id}", response_model=TaskRunDTO)
+async def get_task_run(
+    run_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: int = Depends(require_admin_actor),
+) -> TaskRunDTO:
+    """Один прогон: за ним следит кнопка «Проверить сейчас» в боте."""
+    run = await periodic_service.get_run(session, run_id)
+    if run is None:
+        raise NotFound("прогон не найден")
+    return run_dto(run)
+
+
 @router.get("/task-runs", response_model=list[TaskRunDTO])
 async def list_task_runs(
     task: str | None = None,
@@ -114,4 +127,4 @@ async def list_task_runs(
     _: int = Depends(require_admin_actor),
 ) -> list[TaskRunDTO]:
     runs = await periodic_service.list_runs(session, task=task, limit=min(limit, 200))
-    return [_run_dto(r) for r in runs]
+    return [run_dto(r) for r in runs]

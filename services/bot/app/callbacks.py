@@ -47,9 +47,27 @@ class AlertCB(CallbackData, prefix="alr"):
     car_id: int = 0
 
 
+class FineCB(CallbackData, prefix="fine"):
+    """Штрафы: карточка, страницы списка, отметка об оплате.
+
+    Отдельно от FleetCB, потому что карточку открывает и водитель, а весь
+    fleet-роутер закрыт фильтром администратора.
+
+    `scope` — откуда взят список для листания: машина, парк, свои штрафы или
+    конкретный алерт. Пустым не бывает никогда: пустая строка упаковалась бы
+    хвостовым разделителем и сломала разбор (см. ScheduleCB).
+    """
+
+    action: str
+    fine_id: int = 0
+    scope: str = "car"
+    ref_id: int = 0
+    page: int = 0
+
+
 class FleetCB(CallbackData, prefix="flt"):
     """Телеметрия, трекер, штрафы и ТО по конкретной машине."""
 
-    action: str  # state | tracker | tracker_set | fines | fine_add | fine_pay | maint | maint_set | maint_done
+    action: str  # state | tracker | tracker_set | fines | fine_add | maint | maint_set | maint_done
     car_id: int = 0
     obj_id: int = 0

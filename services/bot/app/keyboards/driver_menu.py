@@ -8,13 +8,15 @@ from app.callbacks import PaymentCB
 
 BTN_PAY = "💳 Оплатить"
 BTN_MY_SCHEDULE = "📅 Мой график"
+BTN_MY_FINES = "🧾 Мои штрафы"
 
 
 def driver_menu() -> ReplyKeyboardMarkup:
     builder = ReplyKeyboardBuilder()
     builder.button(text=BTN_PAY)
     builder.button(text=BTN_MY_SCHEDULE)
-    builder.adjust(2)
+    builder.button(text=BTN_MY_FINES)
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 

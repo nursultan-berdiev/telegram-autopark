@@ -12,6 +12,7 @@ BTN_NEW_DRIVER = "➕ Новый водитель"
 BTN_SCHEDULES = "📅 Графики платежей"
 BTN_REPORTS = "📊 Отчёты"
 BTN_AI = "🤖 Спросить ИИ"
+BTN_FINES = "🧾 Штрафы"
 BTN_ADMIN_WEB = "⚙️ Админка"
 
 
@@ -23,6 +24,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
     builder.button(text=BTN_SCHEDULES)
     builder.button(text=BTN_REPORTS)
     builder.button(text=BTN_AI)
+    builder.button(text=BTN_FINES)
     builder.button(text=BTN_ADMIN_WEB)
-    builder.adjust(2, 2, 2, 1)
+    builder.adjust(2, 2, 2, 2)
     return builder.as_markup(resize_keyboard=True)

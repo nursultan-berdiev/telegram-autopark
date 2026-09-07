@@ -13,6 +13,8 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.callbacks import AlertCB
 from app.client import ApiClient, ApiError
 from app.config import settings
+from app.fines_view import esc
+from app.keyboards.fines import fines_page
 
 log = logging.getLogger(__name__)
 
@@ -28,7 +30,10 @@ def alert_text(alert: dict) -> str:
     mark = _SEVERITY_MARK.get(alert.get("severity", "warning"), "!")
     plate = alert.get("car_plate") or f"машина #{alert.get('car_id')}"
     body = alert.get("text") or alert.get("type", "")
-    return f"{mark} {plate}: {body}"
+    # Экранируем: parse_mode=HTML включён глобально, а в тексте алерта
+    # встречается всё, что прислал внешний сервис. Одна угловая скобка — и
+    # Telegram отвергнет сообщение целиком, то есть алерт просто пропадёт.
+    return f"{mark} {esc(plate)}: {esc(body)}"
 
 
 def alert_keyboard(alert: dict) -> InlineKeyboardMarkup:
@@ -98,6 +103,31 @@ def alert_keyboard(alert: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+async def new_fine_card(alert: dict, api: ApiClient) -> tuple[str, InlineKeyboardMarkup]:
+    """Шапка и страница кнопок: сами штрафы дозапрашиваем по id из payload.
+
+    Суммы в payload не кладём — они менялись бы в базе, а в старом сообщении
+    оставались бы прежними.
+    """
+    payload = alert.get("payload") or {}
+    fine_ids = payload.get("fine_ids") or []
+    fines: list[dict] = []
+    if fine_ids:
+        try:
+            by_id = {f["id"]: f for f in await api.fines(int(alert["car_id"]))}
+            fines = [by_id[i] for i in fine_ids if i in by_id]
+        except ApiError as exc:
+            # Уведомление важнее украшений: покажем текст без кнопок.
+            log.warning("штрафы алерта %s не прочитаны: %s", alert["id"], exc)
+
+    if not fines:
+        return alert_text(alert), alert_keyboard(alert)
+    markup, _, _ = fines_page(
+        fines, scope="alert", ref_id=int(alert["id"]), page=0
+    )
+    return alert_text(alert), markup
+
+
 async def poll_alerts(bot: Bot, api: ApiClient) -> int:
     """Показывает админам новые открытые алерты. Возвращает число доставленных."""
     try:
@@ -113,15 +143,24 @@ async def poll_alerts(bot: Bot, api: ApiClient) -> int:
         open_ids.add(alert_id)
         if alert_id in _delivered:
             continue
-        markup = alert_keyboard(alert)
-        text = alert_text(alert)
+        if alert.get("type") == "new_fine":
+            text, markup = await new_fine_card(alert, api)
+        else:
+            text, markup = alert_text(alert), alert_keyboard(alert)
+        shown = 0
         for admin_id in settings.admin_ids:
             try:
                 await bot.send_message(admin_id, text, reply_markup=markup)
-                delivered += 1
+                shown += 1
             except Exception as e:  # noqa: BLE001 — один админ не должен ронять рассылку
                 log.warning("не удалось показать алерт %s админу %s: %s", alert_id, admin_id, e)
-        _delivered.add(alert_id)
+        delivered += shown
+        if shown:
+            _delivered.add(alert_id)
+        else:
+            # Ни одному админу не дошло — помечать доставленным нельзя, иначе
+            # алерт исчезнет навсегда: следующий проход его пропустит.
+            log.error("алерт %s не дошёл ни до кого — повторим на следующем проходе", alert_id)
 
     # Закрытые алерты можно показать снова, если они откроются заново.
     _delivered.intersection_update(open_ids)
