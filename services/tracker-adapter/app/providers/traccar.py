@@ -201,6 +201,10 @@ class TraccarProvider(TrackerProvider):
             try:
                 if not self._authenticated:
                     await self._authenticate()
+                # WS-кадры несут числовой deviceId, а привязка идёт по uniqueId:
+                # без карты устройств _normalize пометит все точки как "1".."5"
+                # (непривязанные). Обновляем её на каждом (ре)подключении.
+                await self.list_devices()
                 headers = {"Cookie": self._cookie_header()}
                 async with self._ws_connect(self._ws_url(), additional_headers=headers) as ws:
                     backoff = _WS_BACKOFF_INITIAL  # соединение установлено — сбрасываем бэкофф

@@ -8,3 +8,4 @@ storage/
 *.log
 .mypy_cache/
 .pytest_cache/
+rsa.pem
