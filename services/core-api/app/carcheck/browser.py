@@ -14,8 +14,10 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import contextmanager
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Iterator
+
+from app.carcheck.parser import plate_registered
+from app.fines_sources import CheckResult
 
 if TYPE_CHECKING:  # реальный импорт playwright нужен только внутри open_session
     from playwright.sync_api import ElementHandle, Page, Response
@@ -37,24 +39,6 @@ SUBMIT_LABELS = (
 )
 PAGE_TIMEOUT_MS = 45_000
 RESPONSE_TIMEOUT_MS = 25_000
-
-
-@dataclass(frozen=True)
-class CheckResult:
-    """Исход проверки одного номера.
-
-    `refused` отделён от неуспеха намеренно: сервис ответил и отказал —
-    это не сбой сети и не отсутствие штрафов.
-    """
-
-    plate: str
-    payload: dict[str, object] | None = None
-    refused: str | None = None
-    error: str | None = None
-
-    @property
-    def ok(self) -> bool:
-        return self.payload is not None
 
 
 def _find_submit(page: "Page") -> "ElementHandle | None":
@@ -113,7 +97,9 @@ class CarcheckSession:
         if status != 200:
             reason = payload.get("code") or payload.get("message") or f"HTTP {status}"
             return CheckResult(plate, refused=str(reason))
-        return CheckResult(plate, payload=payload)
+        return CheckResult(
+            plate, payload=payload, plate_known=plate_registered(payload)
+        )
 
 
 @contextmanager

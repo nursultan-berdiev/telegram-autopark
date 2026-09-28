@@ -1,8 +1,10 @@
 """Телеметрия, трекер, штрафы и ТО в карточке машины (только админ)."""
 from __future__ import annotations
 
+from html import escape
+
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
 from aiogram import F, Router
@@ -128,6 +130,71 @@ async def tracker_set(message: Message, api: ApiClient, state: FSMContext) -> No
     )
 
 
+def money(value: str | float | None) -> str | None:
+    """Суммы приходят строками Decimal («300.00») — хвост копеек не нужен."""
+    if value in (None, ""):
+        return None
+    text = str(value)
+    return text[:-3] if text.endswith(".00") else text
+
+
+def _discount_is_current(fine: dict) -> bool:
+    """Не истёк ли срок скидки, зафиксированный при заведении штрафа.
+
+    Поля скидки снимаются в момент импорта и потом не пересчитываются, а
+    время идёт. Показать «скидка ещё 30 дн.» через месяц — соврать оператору
+    ровно там, где он решает, сколько платить.
+    """
+    days = fine.get("discount_days_left")
+    if not isinstance(days, int):
+        return False
+    created = fine.get("created_at")
+    if not created:
+        return False
+    try:
+        stamp = datetime.fromisoformat(str(created))
+    except ValueError:
+        return False
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return stamp + timedelta(days=days) >= datetime.now(timezone.utc)
+
+
+def fine_line(fine: dict) -> str:
+    """Строка штрафа: сумма, скидка и за что.
+
+    Скидка есть только у штрафов из tolom; у carcheck и ручного ввода полей
+    нет вовсе, и строка обязана читаться и без них.
+
+    Всё, что пришло от сервиса, экранируется: parse_mode=HTML включён
+    глобально, а в примечании лежат статья, название и место нарушения — и
+    сырой JSON, если запись незнакомой формы. Одна угловая скобка иначе либо
+    роняет отправку целиком, либо даёт вставить ссылку в карточку админу.
+    """
+    mark = "оплачен" if fine["status"] == "paid" else "не оплачен"
+    issued = str(fine.get("issued_at", ""))[:10]
+    amount = money(fine.get("amount"))
+    head = f"{amount} сом" if amount else "сумма неизвестна"
+
+    to_pay = money(fine.get("amount_to_pay"))
+    if to_pay and to_pay != amount:
+        head += (
+            f" (к оплате {to_pay} сом, скидка ещё {fine['discount_days_left']} дн."
+            f" на {_checked_on(fine)})"
+            if _discount_is_current(fine)
+            else f" (к оплате {to_pay} сом, срок скидки уточните в сервисе)"
+        )
+
+    line = f"• {issued} — {escape(head)} ({mark})"
+    note = fine.get("note")
+    return f"{line}\n  {escape(note)}" if note else line
+
+
+def _checked_on(fine: dict) -> str:
+    """Дата, на которую снята скидка: цифра верна только на неё."""
+    return str(fine.get("created_at", ""))[:10]
+
+
 @router.callback_query(FleetCB.filter(F.action == "fines"), IsAdmin)
 async def fines_list(
     query: CallbackQuery, callback_data: FleetCB, api: ApiClient
@@ -142,11 +209,7 @@ async def fines_list(
     if not fines:
         text = "Штрафов нет."
     else:
-        rows = []
-        for fine in fines:
-            mark = "оплачен" if fine["status"] == "paid" else "не оплачен"
-            issued = str(fine.get("issued_at", ""))[:10]
-            rows.append(f"• {issued} — {fine.get('amount') or '—'} ({mark})")
+        rows = [fine_line(fine) for fine in fines]
         text = "Штрафы:\n" + "\n".join(rows)
 
     builder = InlineKeyboardBuilder()
@@ -157,7 +220,7 @@ async def fines_list(
     for fine in fines:
         if fine["status"] != "paid":
             builder.button(
-                text=f"✅ Оплачен: {fine.get('amount') or fine['id']}",
+                text=f"✅ Оплачен: {money(fine.get('amount_to_pay')) or money(fine.get('amount')) or fine['id']}",
                 callback_data=FleetCB(
                     action="fine_pay", car_id=callback_data.car_id, obj_id=fine["id"]
                 ),

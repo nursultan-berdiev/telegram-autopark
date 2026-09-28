@@ -236,3 +236,76 @@ async def test_import_endpoint_returns_counters(client, session):
         "unknown_plates": ["09KG000ZZZ"],
         "ambiguous_plates": [],
     }
+
+
+# --- суммы со скидкой (tolom) ------------------------------------------------
+
+
+async def test_import_stores_discounted_amount(session):
+    """Полная сумма и сумма со скидкой хранятся обе: одна без другой врёт."""
+    car = await cars_service.create_car(
+        session, plate="01KG700AAA", model=None, photo_file_id=None, photo_path=None
+    )
+
+    await fines_service.import_fines(
+        session,
+        [
+            fines_service.FineImportRow(
+                plate=car.plate,
+                external_ref="TL1",
+                amount=Decimal("1000"),
+                amount_to_pay=Decimal("300"),
+                discount_days_left=30,
+                currency="KGS",
+            )
+        ],
+        source="tolom",
+    )
+
+    fine = (await fines_service.list_fines(session, car.id))[0]
+    assert fine.amount == Decimal("1000")
+    assert fine.amount_to_pay == Decimal("300")
+    assert fine.discount_days_left == 30
+
+
+async def test_fine_dto_exposes_discount(client, session, admin_headers):
+    """Скидку должен видеть клиент: ради неё источник и подключался."""
+    car = await cars_service.create_car(
+        session, plate="01KG701AAA", model=None, photo_file_id=None, photo_path=None
+    )
+    await fines_service.import_fines(
+        session,
+        [
+            fines_service.FineImportRow(
+                plate=car.plate,
+                external_ref="TL2",
+                amount=Decimal("1000"),
+                amount_to_pay=Decimal("300"),
+                discount_days_left=15,
+            )
+        ],
+        source="tolom",
+    )
+
+    resp = await client.get(f"/cars/{car.id}/fines", headers=admin_headers)
+
+    assert resp.status_code == 200
+    body = resp.json()[0]
+    assert body["amount_to_pay"] == "300.00"
+    assert body["discount_days_left"] == 15
+
+
+async def test_import_item_without_discount_still_accepted(client, session):
+    """Раннер в браузере шлёт carcheck-форму без сумм — контракт не сломан."""
+    car = await cars_service.create_car(
+        session, plate="01KG702AAA", model=None, photo_file_id=None, photo_path=None
+    )
+
+    resp = await client.post(
+        "/fines/import",
+        json=[{"plate": car.plate, "external_ref": "OLD1"}],
+        headers=_import_headers(),
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["created"] == 1

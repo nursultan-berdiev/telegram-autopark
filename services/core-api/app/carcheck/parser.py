@@ -9,18 +9,19 @@
          "violationDate": "2026-08-10T20:06:04"}]}}
 
 Список нарушений лежит на уровень глубже имени ключа, а суммы в ответе нет
-вовсе — только тип, номер постановления и время. Оператор смотрит сумму сам,
-задача бота — сообщить, что штраф появился.
+вовсе — только тип, номер постановления и время. Сумму отдаёт второй источник
+(app/tolom), общие для обоих типы и нормализация — в app/fines_sources.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime
-from decimal import Decimal, InvalidOperation
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from app.config import settings
+from app.fines_sources import (
+    ParsedViolation,
+    normalize_amount,
+    normalize_date,
+    pick,
+)
 
 LIST_KEYS = ("violations", "items", "data", "content", "result", "records")
 REF_KEYS = (
@@ -53,29 +54,17 @@ NOTE_KEYS = (
 
 # Защита от бесконечной рекурсии по произвольному JSON.
 MAX_DEPTH = 8
-# Сервис отдаёт время без зоны, и это местное время страны, где он работает.
-# Отдать его на откуп зоне сервера нельзя: ночное нарушение уехало бы на
-# соседние сутки, а по датам считается окно правила «N штрафов за период».
-# Зона берётся из настроек, а не зашивается смещением: одно место правки.
-SERVICE_TZ = ZoneInfo(settings.timezone)
+def plate_registered(payload: Any) -> bool:
+    """Есть ли номер в реестре сервиса.
 
-
-@dataclass(frozen=True)
-class ParsedViolation:
-    external_ref: str
-    issued_at: datetime | None
-    amount: Decimal | None
-    note: str | None
-
-
-def pick(record: Any, keys: tuple[str, ...]) -> Any:
-    if not isinstance(record, dict):
-        return None
-    for key in keys:
-        value = record.get(key)
-        if value not in (None, ""):
-            return value
-    return None
+    Смотрим на данные карточки, а не на флаг `success`: у неизвестного номера
+    сервис отвечает `{"vehicle": {"success": true, "message": "Запись не
+    найдена", "data": null}}` — то есть успехом. На текст сообщения тоже
+    полагаться нельзя, он меняется вместе с локалью сайта (снято с живого
+    сервиса 07.09.2026).
+    """
+    vehicle = payload.get("vehicle") if isinstance(payload, dict) else None
+    return bool(isinstance(vehicle, dict) and vehicle.get("data"))
 
 
 def looks_like_violation(record: Any) -> bool:
@@ -111,46 +100,6 @@ def extract_list(payload: Any, depth: int = 0) -> list[dict]:
         if found:
             return found
     return []
-
-
-def normalize_amount(raw: Any) -> Decimal | None:
-    if raw in (None, ""):
-        return None
-    text = "".join(ch for ch in str(raw) if not ch.isspace())
-    if not text or any(ch not in "0123456789.,-" for ch in text):
-        return None
-
-    # Формат определяем по последнему разделителю, а не по наличию точки:
-    # «3.000,50» и «3,000.50» — одна сумма, но по точке читаются наоборот.
-    last = max(text.rfind("."), text.rfind(","))
-    if last == -1:
-        normalized = text
-    else:
-        tail = text[last + 1 :]
-        head = text[:last].replace(".", "").replace(",", "")
-        # Ровно три цифры после разделителя — разряд тысяч («1.234»):
-        # дробная часть такой длины в деньгах не встречается.
-        normalized = head + tail if len(tail) == 3 else f"{head}.{tail}"
-    try:
-        return Decimal(normalized)
-    except InvalidOperation:
-        return None
-
-
-def normalize_date(raw: Any) -> datetime | None:
-    if raw in (None, ""):
-        return None
-    text = str(raw).strip()
-    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
-        try:
-            return datetime.strptime(text, fmt).replace(tzinfo=SERVICE_TZ)
-        except ValueError:
-            pass
-    try:
-        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=SERVICE_TZ)
 
 
 def parse_violations(payload: Any) -> tuple[list[ParsedViolation], list[dict]]:

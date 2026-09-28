@@ -41,9 +41,18 @@ class Settings(BaseSettings):
     # Пауза между номерами: всплеск запросов роняет оценку reCAPTCHA,
     # и сервис начинает отказывать.
     carcheck_pause_seconds: float = Field(default=7.0, alias="CARCHECK_PAUSE_SECONDS")
-    carcheck_failure_alert_after: int = Field(
-        default=3, alias="CARCHECK_FAILURE_ALERT_AFTER"
+    # Порог общий для обоих источников: смысл «сколько прогонов подряд молчим,
+    # прежде чем бить тревогу» от сервиса не зависит.
+    fines_failure_alert_after: int = Field(
+        default=3, alias="FINES_FAILURE_ALERT_AFTER"
     )
+
+    # tolom.kg — второй источник штрафов: обычный HTTP, с суммами и статьями.
+    # Браузера не требует, поэтому пауза между номерами короче carcheck'овой,
+    # но не нулевая: частота запросов к госсервису — вопрос приличия.
+    tolom_url: str = Field(default="https://tolom.kg/api/v1", alias="TOLOM_URL")
+    tolom_timeout_seconds: float = Field(default=30.0, alias="TOLOM_TIMEOUT_SECONDS")
+    tolom_pause_seconds: float = Field(default=3.0, alias="TOLOM_PAUSE_SECONDS")
 
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")

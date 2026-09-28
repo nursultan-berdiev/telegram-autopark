@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.carcheck.parser import (
     extract_list,
+    plate_registered,
     normalize_amount,
     normalize_date,
     parse_violations,
@@ -140,3 +141,33 @@ def test_explicit_zone_is_respected():
 def test_garbage_date_is_none():
     assert normalize_date("позавчера") is None
     assert normalize_date(None) is None
+
+
+# --- номер вне реестра ------------------------------------------------------
+#
+# Снято с живого сервиса 07.09.2026: у неизвестного номера ответ приходит
+# УСПЕШНЫМ, а карточка машины пуста.
+
+REAL_UNKNOWN_PLATE = {
+    "vehicle": {"success": True, "message": "Запись не найдена", "data": None},
+    "violations": {"success": True, "message": "", "data": []},
+}
+
+
+def test_known_plate_is_registered():
+    assert plate_registered(REAL_WITH_FINES) is True
+
+
+def test_unknown_plate_is_not_registered():
+    """Опечатка в госномере не должна выглядеть как машина без штрафов."""
+    assert plate_registered(REAL_UNKNOWN_PLATE) is False
+
+
+def test_success_flag_alone_would_not_have_caught_it():
+    """Флаг success у неизвестного номера — true, поэтому смотрим на данные."""
+    assert REAL_UNKNOWN_PLATE["vehicle"]["success"] is True
+
+
+def test_broken_payload_is_not_registered():
+    assert plate_registered({}) is False
+    assert plate_registered(None) is False

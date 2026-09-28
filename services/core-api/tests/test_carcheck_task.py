@@ -12,6 +12,7 @@ from app.domain import fines as fines_service
 from app.tasks.fines import PlateScan, import_and_alert, scan_plates, summarize
 
 UTC = timezone.utc
+HINT = "Сумму смотрите на carcheck.gov.kg по номеру постановления"
 
 
 class FakeChecker:
@@ -140,7 +141,9 @@ def _violation(ref):
 async def test_new_fine_raises_alert_with_counts(session):
     car = await _car(session)
 
-    created = await import_and_alert(session, [PlateScan(car.plate, [_violation("AM1"), _violation("AM2")])])
+    created = await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM1"), _violation("AM2")])], source="carcheck", hint=HINT
+    )
 
     assert created == 2
     alerts = await alerts_domain.list_alerts(session, status="open")
@@ -155,12 +158,16 @@ async def test_repeat_run_adds_nothing_and_stays_silent(session):
     from app.db.models import AlertStatus
 
     car = await _car(session)
-    await import_and_alert(session, [PlateScan(car.plate, [_violation("AM1")])])
+    await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    )
     opened = await alerts_domain.list_alerts(session, status="open")
     await alerts_domain.set_status(session, opened[0], AlertStatus.resolved)
     await session.commit()
 
-    created = await import_and_alert(session, [PlateScan(car.plate, [_violation("AM1")])])
+    created = await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    )
 
     assert created == 0
     assert await alerts_domain.list_alerts(session, status="open") == []
@@ -170,7 +177,9 @@ async def test_fine_without_amount_is_still_imported(session):
     """Сервис суммы не отдаёт — штраф всё равно должен попасть в базу."""
     car = await _car(session)
 
-    await import_and_alert(session, [PlateScan(car.plate, [_violation("AM1")])])
+    await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    )
 
     fines = await fines_service.list_fines(session, car.id)
     assert len(fines) == 1
@@ -237,10 +246,14 @@ async def test_second_batch_creates_a_new_alert(session):
     открытого, он останется показанным один раз — с устаревшими цифрами.
     """
     car = await _car(session)
-    await import_and_alert(session, [PlateScan(car.plate, [_violation("AM1")])])
+    await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    )
     first = (await alerts_domain.list_alerts(session, status="open"))[0]
 
-    await import_and_alert(session, [PlateScan(car.plate, [_violation("AM2")])])
+    await import_and_alert(
+        session, [PlateScan(car.plate, [_violation("AM2")])], source="carcheck", hint=HINT
+    )
 
     opened = await alerts_domain.list_alerts(session, status="open")
     assert len(opened) == 1
@@ -257,6 +270,8 @@ async def test_fleet_imported_in_one_pass(session):
     created = await import_and_alert(
         session,
         [PlateScan(first.plate, [_violation("AM1")]), PlateScan(second.plate, [_violation("AM2")])],
+        source="carcheck",
+        hint=HINT,
     )
 
     assert created == 2
@@ -270,6 +285,8 @@ async def test_missing_car_does_not_stop_the_batch(session, monkeypatch):
     created = await import_and_alert(
         session,
         [PlateScan("01KG999ZZZ", [_violation("AM9")]), PlateScan(car.plate, [_violation("AM1")])],
+        source="carcheck",
+        hint=HINT,
     )
 
     assert created == 1, "номер не из парка не импортируется, свой — импортируется"
