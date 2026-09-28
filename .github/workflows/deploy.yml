@@ -1,0 +1,37 @@
+# Ручной выкат на сервер OVH через self-hosted раннер, живущий на этом сервере.
+# Тесты (гейт ci) идут на GitHub-hosted раннере и прод не грузят. Сам деплой —
+# безопасный (сборка до подъёма, откат, без down/-v): вся логика в .ci/deploy.sh.
+name: Deploy to Server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false        # не отменять уже идущий выкат
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml   # гейт: тесты 3 сервисов, линт, миграции, compose config
+
+  deploy:
+    needs: ci                          # выкат только если ci зелёный
+    runs-on: [self-hosted, fleet-ovh]
+    env:
+      COMPOSE_PROJECT_NAME: fleet      # строго существующий проект и тома fleet_*
+      DEPLOY_DIR: /opt/fleet
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Синхронизировать код в ${{ env.DEPLOY_DIR }} (сохранить .env и storage)
+        run: |
+          rsync -a --delete \
+            --exclude '.git/' --exclude '.env' --exclude 'storage/' --exclude 'rsa.pem' \
+            "$GITHUB_WORKSPACE"/ "$DEPLOY_DIR"/
+
+      - name: Безопасный деплой (сборка → up → health → откат/чистка)
+        working-directory: ${{ env.DEPLOY_DIR }}
+        run: bash .ci/deploy.sh
