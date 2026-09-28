@@ -1,10 +1,11 @@
 """Штрафы: список, добавление, оплата, удаление, подсчёт неоплаченных для правил."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from typing import NamedTuple, Sequence
+from typing import Mapping, NamedTuple, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -12,6 +13,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Car, Driver, Fine, FineStatus
 from app.errors import Conflict
+
+log = logging.getLogger(__name__)
+
+# Поля, которые внешний источник переписывает на каждом прогоне. Намеренно
+# не входят: issued_at (дата нарушения не меняется), note (там заметка
+# человека), status и driver_id (это наши решения, а не сервиса).
+SOURCE_FIELDS = (
+    "amount",
+    "amount_to_pay",
+    "discount_days_left",
+    "currency",
+    "article",
+    "violation_title",
+    "place",
+    "payment_code",
+    "protocol_kind",
+    "delivery_date",
+)
 
 
 @dataclass(frozen=True)
@@ -27,6 +46,12 @@ class FineImportRow:
     discount_days_left: int | None = None
     currency: str | None = None
     issued_at: datetime | None = None
+    article: str | None = None
+    violation_title: str | None = None
+    place: str | None = None
+    payment_code: str | None = None
+    protocol_kind: str | None = None
+    delivery_date: date | None = None
     note: str | None = None
 
 
@@ -44,8 +69,13 @@ class FineImportOutcome(NamedTuple):
     ambiguous_plates: list[str]
     # Без дефолтов: у typing.NamedTuple дефолт — один объект на все
     # экземпляры, и общий словарь испортился бы для всех сразу.
-    created_per_plate: dict[str, int]
+    created_ids_per_plate: dict[str, list[int]]
     car_id_per_plate: dict[str, int]
+    updated: int
+    closed: int
+    # Заполняется, когда закрытие отменено предохранителем: молчать о таком
+    # нельзя — снаружи это выглядело бы как «оплаченных не нашлось».
+    close_skipped: str | None
 
 
 def _now() -> datetime:
@@ -78,6 +108,43 @@ async def list_fines(
 
 async def get_fine(session: AsyncSession, fine_id: int) -> Fine | None:
     return await session.get(Fine, fine_id)
+
+
+async def get_fine_with_plate(
+    session: AsyncSession, fine_id: int
+) -> tuple[Fine, str] | None:
+    """Штраф вместе с номером машины: карточке он нужен всегда."""
+    result = await session.execute(
+        select(Fine, Car.plate).join(Car, Car.id == Fine.car_id).where(Fine.id == fine_id)
+    )
+    row = result.first()
+    return (row[0], row[1]) if row else None
+
+
+async def list_fleet_fines(
+    session: AsyncSession,
+    *,
+    car_id: int | None = None,
+    only_unpaid: bool = True,
+    limit: int = 200,
+) -> list[tuple[Fine, str]]:
+    """Штрафы по всему парку или по одной машине, вместе с номерами.
+
+    Сортировка по машине, а затем по дате: группировку на экране остаётся
+    только отрисовать, пересортировывать на клиенте нечего.
+    """
+    stmt = (
+        select(Fine, Car.plate)
+        .join(Car, Car.id == Fine.car_id)
+        .order_by(Car.plate, Fine.issued_at.desc())
+        .limit(limit)
+    )
+    if car_id is not None:
+        stmt = stmt.where(Fine.car_id == car_id)
+    if only_unpaid:
+        stmt = stmt.where(Fine.status == FineStatus.unpaid)
+    result = await session.execute(stmt)
+    return [(row[0], row[1]) for row in result.all()]
 
 
 async def _same_fine_exists(
@@ -168,26 +235,130 @@ async def _active_driver_by_car(session: AsyncSession) -> dict[int, int]:
     return dict(rows.all())
 
 
-async def _insert_or_skip(
+def discount_deadline(delivery: date | None, days_left: int | None) -> date | None:
+    """Последний день скидки.
+
+    Срок идёт от ВРУЧЕНИЯ постановления: пока `delivery_date` пуст, отсчёт не
+    начался, и предельной даты не существует — выдумывать её неоткуда.
+    """
+    if delivery is None or days_left is None or days_left < 0:
+        return None
+    return delivery + timedelta(days=days_left)
+
+
+def _apply_source_fields(fine: Fine, row: FineImportRow) -> bool:
+    """Переносит в штраф то, что сервис прислал сейчас. True — что-то изменилось.
+
+    Обновляем ТОЛЬКО не-`None`: у carcheck сумм и подробностей нет вовсе, и
+    пустое там означает «не знаю», а не «значения нет». Слепое присваивание
+    затёрло бы данные tolom при первом же прогоне запасного источника.
+    """
+    changed = False
+    for field in SOURCE_FIELDS:
+        value = getattr(row, field)
+        if value is not None and getattr(fine, field) != value:
+            setattr(fine, field, value)
+            changed = True
+
+    deadline = discount_deadline(fine.delivery_date, fine.discount_days_left)
+    if deadline is not None:
+        if fine.discount_until is None or deadline > fine.discount_until:
+            fine.discount_until = deadline
+            changed = True
+        elif deadline < fine.discount_until:
+            # Дата скидки не может уезжать назад: если сервис считает
+            # discountDaysLeft обратным отсчётом, сумма «вручение + остаток»
+            # уменьшалась бы каждый день. Держим самый ранний расчёт.
+            log.warning(
+                "срок скидки по %s уехал бы назад: %s → %s",
+                fine.external_ref,
+                fine.discount_until,
+                deadline,
+            )
+    return changed
+
+
+async def _insert_or_update(
     session: AsyncSession,
     fine: Fine,
-) -> bool:
-    """True — штраф заведён, False — такой уже был.
+    row: FineImportRow,
+    *,
+    seen_at: datetime,
+    source: str,
+) -> str:
+    """Заводит штраф или обновляет уже известный: "created" | "updated" | "same".
 
     Дубль отсекает уникальный индекс, а не проверка перед вставкой: два
     параллельных прогона иначе завели бы штраф дважды.
     """
+    fine.last_seen_at = seen_at
+    fine.last_seen_source = source
     try:
         async with session.begin_nested():
             session.add(fine)
             await session.flush()
-        return True
+        return "created"
     except IntegrityError:
-        if await _same_fine_exists(session, fine.car_id, fine.external_ref):
-            return False
-        # Не дубль, а что-то другое: молча зачислить в «пропущено» значит
-        # потерять штраф.
-        raise
+        existing = await _get_by_ref(session, fine.car_id, fine.external_ref)
+        if existing is None:
+            # Не дубль, а что-то другое: молча зачислить в «пропущено» значит
+            # потерять штраф.
+            raise
+        changed = _apply_source_fields(existing, row)
+        existing.last_seen_at = seen_at
+        existing.last_seen_source = source
+        # `status` не трогаем никогда: админ мог отметить оплату раньше, чем
+        # сервис это увидел, и воскрешать штраф нельзя.
+        return "updated" if changed else "same"
+
+
+async def _get_by_ref(
+    session: AsyncSession, car_id: int, external_ref: str | None
+) -> Fine | None:
+    if external_ref is None:
+        return None
+    result = await session.execute(
+        select(Fine).where(Fine.car_id == car_id, Fine.external_ref == external_ref)
+    )
+    return result.scalars().first()
+
+
+async def close_missing(
+    session: AsyncSession,
+    *,
+    car_id: int,
+    seen_refs: set[str],
+    source: str,
+    now: datetime | None = None,
+) -> list[Fine]:
+    """Ищет штрафы, пропавшие из ответа сервиса. Пометку делает вызывающий.
+
+    Оплаченный штраф исчезает из ответа — другого признака оплаты сервис не
+    даёт. Закрываем только то, что этот источник когда-либо видел сам
+    (`source` или `last_seen_source`): ручной штраф в ответе не фигурирует по
+    определению, и «пропажей» он выглядит всегда.
+
+    Вызывать можно ТОЛЬКО по машине с полностью разобранным успешным ответом —
+    решение об этом принимает вызывающий (см. app/tasks/fines.py).
+    """
+    now = now or _now()
+    result = await session.execute(
+        select(Fine).where(
+            Fine.car_id == car_id,
+            Fine.status == FineStatus.unpaid,
+            Fine.external_ref.is_not(None),
+            (Fine.source == source) | (Fine.last_seen_source == source),
+        )
+    )
+    return [f for f in result.scalars() if f.external_ref not in seen_refs]
+
+
+def mark_paid(fines: Sequence[Fine], *, paid_by: str, now: datetime) -> None:
+    """Отмечает оплату. `last_seen_at` не трогаем: это «когда видели», а не «когда закрыли»."""
+    for fine in fines:
+        fine.status = FineStatus.paid
+        fine.paid_at = now
+        fine.paid_by = paid_by
 
 
 async def import_fines(
@@ -197,22 +368,30 @@ async def import_fines(
     source: str = "carcheck",
     created_by: int | None = None,
     commit: bool = True,
+    closable: Mapping[str, set[str]] | None = None,
+    close_limit: int | None = None,
 ) -> FineImportOutcome:
-    """Заводит найденные снаружи штрафы, пропуская уже известные.
+    """Сводит найденное снаружи с базой: заводит новое, обновляет известное.
 
-    `commit=False` отдаёт фиксацию вызывающему: импорт и уведомление о новом
-    штрафе должны быть атомарны, иначе штраф ложится в базу, уведомление
-    падает, а следующий прогон считает его уже не новым — и о нём никто
-    никогда не узнает.
+    `closable` — номера машин, по которым ответ сервиса был полным и успешным,
+    с набором пришедших номеров постановлений. Только по ним можно считать,
+    что пропавший штраф оплачен; решение принимает вызывающий, потому что
+    здесь не видно ни отказов сервиса, ни неразобранных записей.
+
+    `commit=False` отдаёт фиксацию вызывающему: импорт, закрытие и уведомление
+    должны быть атомарны, иначе штраф ложится в базу, уведомление падает, а
+    следующий прогон считает его уже не новым — и о нём никто не узнает.
     """
     by_plate, ambiguous_keys = await _build_plate_index(session)
     drivers = await _active_driver_by_car(session)
+    now = _now()
 
     created = 0
+    updated = 0
     skipped = 0
     unknown: dict[str, str] = {}
     ambiguous: dict[str, str] = {}
-    created_per_plate: dict[str, int] = {}
+    created_ids_per_plate: dict[str, list[int]] = {}
     car_id_per_plate: dict[str, int] = {}
     for item in items:
         key = normalize_plate(item.plate)
@@ -223,28 +402,49 @@ async def import_fines(
         if car_id is None:
             unknown.setdefault(key, item.plate)
             continue
-        inserted = await _insert_or_skip(
-            session,
-            Fine(
-                car_id=car_id,
-                driver_id=drivers.get(car_id),
-                amount=item.amount,
-                amount_to_pay=item.amount_to_pay,
-                discount_days_left=item.discount_days_left,
-                currency=item.currency,
-                issued_at=item.issued_at or _now(),
-                source=source,
-                external_ref=item.external_ref,
-                note=item.note,
-                created_by=created_by,
+        fine = Fine(
+            car_id=car_id,
+            driver_id=drivers.get(car_id),
+            amount=item.amount,
+            amount_to_pay=item.amount_to_pay,
+            discount_days_left=item.discount_days_left,
+            currency=item.currency,
+            issued_at=item.issued_at or now,
+            source=source,
+            external_ref=item.external_ref,
+            article=item.article,
+            violation_title=item.violation_title,
+            place=item.place,
+            payment_code=item.payment_code,
+            protocol_kind=item.protocol_kind,
+            delivery_date=item.delivery_date,
+            discount_until=discount_deadline(
+                item.delivery_date, item.discount_days_left
             ),
+            note=item.note,
+            created_by=created_by,
+        )
+        outcome = await _insert_or_update(
+            session, fine, item, seen_at=now, source=source
         )
         car_id_per_plate[item.plate] = car_id
-        if inserted:
+        if outcome == "created":
             created += 1
-            created_per_plate[item.plate] = created_per_plate.get(item.plate, 0) + 1
+            created_ids_per_plate.setdefault(item.plate, []).append(fine.id)
         else:
             skipped += 1
+            updated += outcome == "updated"
+
+    closed, close_skipped = await _close_all_missing(
+        session,
+        closable=closable or {},
+        by_plate=by_plate,
+        ambiguous_keys=ambiguous_keys,
+        source=source,
+        close_limit=close_limit,
+        now=now,
+    )
+
     if commit:
         await session.commit()
     return FineImportOutcome(
@@ -252,17 +452,62 @@ async def import_fines(
         skipped=skipped,
         unknown_plates=list(unknown.values()),
         ambiguous_plates=list(ambiguous.values()),
-        created_per_plate=created_per_plate,
+        created_ids_per_plate=created_ids_per_plate,
         car_id_per_plate=car_id_per_plate,
+        updated=updated,
+        closed=closed,
+        close_skipped=close_skipped,
     )
 
 
-async def pay_fine(session: AsyncSession, fine_id: int) -> Fine | None:
+async def _close_all_missing(
+    session: AsyncSession,
+    *,
+    closable: Mapping[str, set[str]],
+    by_plate: dict[str, int],
+    ambiguous_keys: set[str],
+    source: str,
+    close_limit: int | None,
+    now: datetime,
+) -> tuple[int, str | None]:
+    """Закрывает пропавшие по всем машинам разом — с предохранителем.
+
+    Предохранитель нужен на случай, которого не покрывает ни один фильтр
+    вызывающего: сервис молча переименовал контейнер, разбор вернул пусто по
+    всему парку, и «оплаченным» выглядит сразу всё. Массовое закрытие лучше
+    отменить целиком и сказать об этом, чем сделать наполовину.
+    """
+    candidates: list[Fine] = []
+    for plate, seen_refs in closable.items():
+        key = normalize_plate(plate)
+        if key in ambiguous_keys:
+            continue
+        car_id = by_plate.get(key)
+        if car_id is None:
+            continue
+        candidates.extend(
+            await close_missing(
+                session, car_id=car_id, seen_refs=seen_refs, source=source, now=now
+            )
+        )
+
+    if close_limit is not None and len(candidates) > close_limit:
+        reason = f"за прогон пропало {len(candidates)} штрафов, порог {close_limit}"
+        log.error("закрытие отменено: %s", reason)
+        return 0, reason
+    mark_paid(candidates, paid_by=source, now=now)
+    return len(candidates), None
+
+
+async def pay_fine(
+    session: AsyncSession, fine_id: int, *, paid_by: str = "admin"
+) -> Fine | None:
     fine = await get_fine(session, fine_id)
     if fine is None:
         return None
     fine.status = FineStatus.paid
     fine.paid_at = _now()
+    fine.paid_by = paid_by
     await session.commit()
     await session.refresh(fine)
     return fine

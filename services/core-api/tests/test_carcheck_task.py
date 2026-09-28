@@ -9,7 +9,14 @@ from app.db.models import AlertType, TaskRunStatus
 from app.domain import alerts as alerts_domain
 from app.domain import cars as cars_service
 from app.domain import fines as fines_service
-from app.tasks.fines import PlateScan, import_and_alert, scan_plates, summarize
+from app.tasks.fines import (
+    PlateScan,
+    ScanResult,
+    SyncReport,
+    scan_plates,
+    summarize,
+    sync_and_alert,
+)
 
 UTC = timezone.utc
 HINT = "Сумму смотрите на carcheck.gov.kg по номеру постановления"
@@ -101,7 +108,7 @@ def test_refusal_is_not_reported_as_success():
         ["A"], FakeChecker({"A": CheckResult("A", refused="CAPTCHA_LOW_SCORE")}), pause=_noop
     )
 
-    status, detail = summarize(scan, 0)
+    status, detail = summarize(scan, SyncReport())
 
     assert status is TaskRunStatus.refused
     assert "отказал" in detail
@@ -110,7 +117,7 @@ def test_refusal_is_not_reported_as_success():
 def test_empty_result_is_success_not_failure():
     scan = scan_plates(["A"], FakeChecker({"A": CheckResult("A", payload=_payload())}), pause=_noop)
 
-    status, _ = summarize(scan, 0)
+    status, _ = summarize(scan, SyncReport())
 
     assert status is TaskRunStatus.ok, "«штрафов нет» — нормальный исход"
 
@@ -118,7 +125,7 @@ def test_empty_result_is_success_not_failure():
 def test_all_plates_failed_is_failure():
     scan = scan_plates(["A"], FakeChecker({"A": CheckResult("A", error="таймаут")}), pause=_noop)
 
-    status, _ = summarize(scan, 0)
+    status, _ = summarize(scan, SyncReport())
 
     assert status is TaskRunStatus.failed
 
@@ -141,16 +148,19 @@ def _violation(ref):
 async def test_new_fine_raises_alert_with_counts(session):
     car = await _car(session)
 
-    created = await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM1"), _violation("AM2")])], source="carcheck", hint=HINT
+    report = await sync_and_alert(
+        session,
+        ScanResult(scans=[PlateScan(car.plate, [_violation("AM1"), _violation("AM2")])]),
     )
 
-    assert created == 2
+    assert report.created == 2
     alerts = await alerts_domain.list_alerts(session, status="open")
     assert len(alerts) == 1
     assert alerts[0].type is AlertType.new_fine
     assert alerts[0].payload["new"] == 2
-    assert "Сумму смотрите" in alerts[0].payload["text"]
+    assert alerts[0].payload["text"] == "новых штрафов 2:"
+    # Сами штрафы бот дозапросит по id — в payload их данных нет.
+    assert len(alerts[0].payload["fine_ids"]) == 2
 
 
 async def test_repeat_run_adds_nothing_and_stays_silent(session):
@@ -158,18 +168,18 @@ async def test_repeat_run_adds_nothing_and_stays_silent(session):
     from app.db.models import AlertStatus
 
     car = await _car(session)
-    await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("AM1")])])
     )
     opened = await alerts_domain.list_alerts(session, status="open")
     await alerts_domain.set_status(session, opened[0], AlertStatus.resolved)
     await session.commit()
 
-    created = await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    report = await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("AM1")])])
     )
 
-    assert created == 0
+    assert report.created == 0
     assert await alerts_domain.list_alerts(session, status="open") == []
 
 
@@ -177,8 +187,8 @@ async def test_fine_without_amount_is_still_imported(session):
     """Сервис суммы не отдаёт — штраф всё равно должен попасть в базу."""
     car = await _car(session)
 
-    await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("AM1")])])
     )
 
     fines = await fines_service.list_fines(session, car.id)
@@ -195,14 +205,31 @@ async def test_fine_without_amount_is_still_imported(session):
 # --- серия отказов ----------------------------------------------------------
 
 
-async def _run_row(session, status, task=None):
+async def _run_row(session, status, task=None, finished=True):
     from app.db.models import TaskRun
     from app.tasks.fines import NAME
 
-    row = TaskRun(task=task or NAME, status=status)
+    row = TaskRun(
+        task=task or NAME,
+        status=status,
+        # Завершённость обязательна: строка прогона заводится со статусом
+        # «неуспех», и незавершённый прогон отказом ещё не является.
+        finished_at=datetime.now(UTC) if finished else None,
+    )
     session.add(row)
     await session.commit()
     return row
+
+
+async def test_running_task_is_not_a_failure_yet(session):
+    """Прогон, поставленный в очередь, ещё не отказ: он просто не закончился."""
+    from app.domain import periodic as periodic_service
+    from app.tasks.fines import NAME
+
+    await _run_row(session, TaskRunStatus.ok)
+    await _run_row(session, TaskRunStatus.failed, finished=False)
+
+    assert await periodic_service.consecutive_failures(session, NAME) == 0
 
 
 async def test_consecutive_failures_counts_until_first_success(session):
@@ -246,20 +273,19 @@ async def test_second_batch_creates_a_new_alert(session):
     открытого, он останется показанным один раз — с устаревшими цифрами.
     """
     car = await _car(session)
-    await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM1")])], source="carcheck", hint=HINT
+    await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("AM1")])])
     )
     first = (await alerts_domain.list_alerts(session, status="open"))[0]
 
-    await import_and_alert(
-        session, [PlateScan(car.plate, [_violation("AM2")])], source="carcheck", hint=HINT
+    await sync_and_alert(
+        session, ScanResult(scans=[PlateScan(car.plate, [_violation("AM2")])])
     )
 
     opened = await alerts_domain.list_alerts(session, status="open")
     assert len(opened) == 1
     assert opened[0].id != first.id, "нужен новый алерт, а не перезапись старого"
     assert opened[0].payload["new"] == 1
-    assert opened[0].payload["unpaid_total"] == 2
 
 
 async def test_fleet_imported_in_one_pass(session):
@@ -267,14 +293,17 @@ async def test_fleet_imported_in_one_pass(session):
     first = await _car(session, "01KG100AAA")
     second = await _car(session, "01KG300CCC")
 
-    created = await import_and_alert(
+    report = await sync_and_alert(
         session,
-        [PlateScan(first.plate, [_violation("AM1")]), PlateScan(second.plate, [_violation("AM2")])],
-        source="carcheck",
-        hint=HINT,
+        ScanResult(
+            scans=[
+                PlateScan(first.plate, [_violation("AM1")]),
+                PlateScan(second.plate, [_violation("AM2")]),
+            ]
+        ),
     )
 
-    assert created == 2
+    assert report.created == 2
     assert len(await alerts_domain.list_alerts(session, status="open")) == 2
 
 
@@ -282,13 +311,16 @@ async def test_missing_car_does_not_stop_the_batch(session, monkeypatch):
     """Машина исчезла между прогоном и импортом — остальные должны доехать."""
     car = await _car(session)
 
-    created = await import_and_alert(
+    report = await sync_and_alert(
         session,
-        [PlateScan("01KG999ZZZ", [_violation("AM9")]), PlateScan(car.plate, [_violation("AM1")])],
-        source="carcheck",
-        hint=HINT,
+        ScanResult(
+            scans=[
+                PlateScan("01KG999ZZZ", [_violation("AM9")]),
+                PlateScan(car.plate, [_violation("AM1")]),
+            ]
+        ),
     )
 
-    assert created == 1, "номер не из парка не импортируется, свой — импортируется"
+    assert report.created == 1, "номер не из парка не импортируется, свой — импортируется"
     opened = await alerts_domain.list_alerts(session, status="open")
     assert [a.car_id for a in opened] == [car.id]

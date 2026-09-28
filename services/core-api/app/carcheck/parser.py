@@ -49,8 +49,9 @@ NOTE_KEYS = (
     "description",
     "place",
     "address",
-    "violationType",
 )
+# Единственное описание нарушения у этого сервиса — тип («AFP» = автофиксация).
+KIND_KEYS = ("violationType",)
 
 # Защита от бесконечной рекурсии по произвольному JSON.
 MAX_DEPTH = 8
@@ -116,12 +117,14 @@ def parse_violations(payload: Any) -> tuple[list[ParsedViolation], list[dict]]:
             unparsed.append(item)
             continue
         note = pick(item, NOTE_KEYS)
+        kind = pick(item, KIND_KEYS)
         parsed.append(
             ParsedViolation(
                 external_ref=str(ref)[:64],
                 issued_at=normalize_date(pick(item, DATE_KEYS)),
                 amount=normalize_amount(pick(item, AMOUNT_KEYS)),
                 note=str(note)[:500] if note is not None else None,
+                protocol_kind=str(kind)[:16].lower() if kind is not None else None,
             )
         )
     return parsed, unparsed

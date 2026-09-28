@@ -19,21 +19,22 @@ from app.tasks.asyncio_bridge import run_async, session_scope
 from app.tasks.celery_app import celery_app
 from app.tasks.fines import (
     ScanResult,
+    SyncReport,
     fleet_plates,
-    import_and_alert,
+    run_payload,
     scan_plates,
     summarize,
+    sync_and_alert,
     warn_on_failure_streak,
 )
 from app.tasks.runlog import record_run
 from app.tolom.client import open_session
-from app.tolom.parser import parse_violations
+from app.tolom.parser import expected_counts, parse_violations
 
 log = logging.getLogger(__name__)
 
 NAME = "app.tasks.fines_tolom.check_fines_tolom"
 SOURCE = "tolom"
-HINT = "Подробности и оплата — на tolom.kg по номеру постановления"
 
 
 def _sleep() -> None:
@@ -42,38 +43,43 @@ def _sleep() -> None:
     time.sleep(settings.tolom_pause_seconds + random.uniform(0, 1))
 
 
-async def _persist(scan: ScanResult) -> int:
+async def _persist(scan: ScanResult) -> SyncReport:
     async with session_scope() as session:
-        return await import_and_alert(
-            session, scan.scans, source=SOURCE, hint=HINT
+        # Только этот источник закрывает оплаченные: он единственный отдаёт
+        # итоги, по которым видно, что ответ разобран целиком.
+        return await sync_and_alert(
+            session,
+            scan,
+            source=SOURCE,
+            close=True,
+            close_limit=settings.fines_close_max_per_run,
         )
 
 
 @celery_app.task(name=NAME)
-def check_fines_tolom(periodic_task_id: int | None = None) -> dict[str, int]:
+def check_fines_tolom(
+    periodic_task_id: int | None = None, run_id: int | None = None
+) -> dict[str, int]:
     scan = ScanResult()
-    new_total = 0
+    report = SyncReport()
     try:
         plates = run_async(fleet_plates)
-        with record_run(NAME, periodic_task_id) as run:
+        with record_run(NAME, periodic_task_id, run_id=run_id) as run:
             with open_session() as checker:
                 scan = scan_plates(
-                    plates, checker, pause=_sleep, parse=parse_violations
+                    plates,
+                    checker,
+                    pause=_sleep,
+                    parse=parse_violations,
+                    expected=expected_counts,
                 )
-            new_total = run_async(lambda: _persist(scan))
-            status, detail = summarize(scan, new_total)
+            report = run_async(lambda: _persist(scan))
+            status, detail = summarize(scan, report)
             run.status = status
             run.detail = detail
-            run.payload = {
-                "plates": len(plates),
-                "checked": scan.checked,
-                "new": new_total,
-                "refused": scan.refused,
-                "failed": scan.failed,
-                "unregistered": scan.unregistered,
-            }
+            run.payload = run_payload(scan, report)
     finally:
         # Как и у carcheck — в finally: поломка, воспроизводящаяся каждый
         # прогон, иначе не дала бы предупредить ни разу.
         run_async(lambda: warn_on_failure_streak(NAME, "tolom.kg"))
-    return {"checked": scan.checked, "new": new_total}
+    return {"checked": scan.checked, "new": report.created}

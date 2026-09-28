@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 from zoneinfo import ZoneInfo
@@ -68,6 +68,15 @@ class ParsedViolation:
     # иначе после истечения скидки в базе лежала бы неверная цифра.
     amount_to_pay: Decimal | None = None
     discount_days_left: int | None = None
+    # Подробности: у carcheck их нет вовсе, и пустое здесь означает «источник
+    # не знает», а не «у нарушения этого нет».
+    article: str | None = None
+    violation_title: str | None = None
+    place: str | None = None
+    payment_code: str | None = None
+    protocol_kind: str | None = None
+    # Дата вручения постановления: от неё идёт срок скидки. Пусто — не вручено.
+    delivery_date: date | None = None
 
 
 def pick(record: Any, keys: tuple[str, ...]) -> Any:
@@ -102,6 +111,16 @@ def normalize_amount(raw: Any) -> Decimal | None:
         return Decimal(normalized)
     except InvalidOperation:
         return None
+
+
+def normalize_day(raw: Any) -> date | None:
+    """Юридический срок — это день, а не момент.
+
+    Хранить его временем значит подарить себе сдвиг на сутки при первой же
+    смене часового пояса ровно там, где мы печатаем голую дату.
+    """
+    parsed = normalize_date(raw)
+    return parsed.date() if parsed is not None else None
 
 
 def normalize_date(raw: Any) -> datetime | None:

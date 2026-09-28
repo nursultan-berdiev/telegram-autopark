@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from croniter import croniter
@@ -158,7 +158,87 @@ async def consecutive_failures(
     runs = await list_runs(session, task=task, limit=limit)
     count = 0
     for run in runs:
+        if run.finished_at is None:
+            # Прогон ещё идёт: он заводится со статусом «неуспех», чтобы
+            # молчаливо упавший воркер не выглядел успешным, — но считать
+            # его отказом до завершения нельзя.
+            continue
         if run.status is TaskRunStatus.ok:
             break
         count += 1
     return count
+
+
+async def start_run(
+    session: AsyncSession, *, task: str, requested_by: int | None = None
+) -> tuple[TaskRun, bool]:
+    """Заводит строку прогона до постановки задачи в очередь.
+
+    Иначе свой прогон не отличить от кронового, начавшегося в ту же секунду:
+    строку создаёт воркер, и id при постановке отдать нечем.
+
+    Статус — «неуспех», как и у `record_run`: незавершённый прогон не должен
+    выглядеть успешным. Признак «ещё идёт» — пустой `finished_at`.
+
+    Возвращает прогон и признак «завели новый»: если прогон уже идёт, отдаётся
+    он, и ставить задачу в очередь второй раз не нужно.
+    """
+    run = TaskRun(
+        task=task,
+        status=TaskRunStatus.failed,
+        started_at=datetime.now(timezone.utc),
+        detail="поставлена в очередь",
+        requested_by=requested_by,
+    )
+    try:
+        async with session.begin_nested():
+            session.add(run)
+            await session.flush()
+    except IntegrityError:
+        # Прогон уже идёт: гонку отсекает частичный уникальный индекс, а не
+        # проверка перед вставкой — два одновременных нажатия иначе оба
+        # увидели бы «не идёт» и поставили в очередь два обхода парка.
+        existing = await running_task(session, task)
+        if existing is None:
+            raise
+        return existing, False
+    await session.commit()
+    await session.refresh(run)
+    return run, True
+
+
+async def running_task(session: AsyncSession, task: str) -> TaskRun | None:
+    """Незавершённый прогон этой задачи, если он есть."""
+    return await session.scalar(
+        select(TaskRun)
+        .where(TaskRun.task == task, TaskRun.finished_at.is_(None))
+        .order_by(TaskRun.started_at.desc())
+        .limit(1)
+    )
+
+
+async def get_run(session: AsyncSession, run_id: int) -> TaskRun | None:
+    return await session.get(TaskRun, run_id)
+
+
+async def close_stale_runs(session: AsyncSession, *, older_than: timedelta) -> int:
+    """Закрывает прогоны, повисшие незавершёнными.
+
+    Строку прогона закрывает исполнитель, но убитый воркер этого не сделает —
+    и тогда незавершённая строка навсегда заблокирует запуск задачи, потому
+    что уникальный индекс не даст завести новую.
+    """
+    deadline = datetime.now(timezone.utc) - older_than
+    stale = await session.scalars(
+        select(TaskRun).where(
+            TaskRun.finished_at.is_(None), TaskRun.started_at < deadline
+        )
+    )
+    closed = 0
+    for run in stale:
+        run.finished_at = datetime.now(timezone.utc)
+        run.detail = (run.detail or "") + " (прогон не завершился)"
+        closed += 1
+    if closed:
+        await session.commit()
+    return closed

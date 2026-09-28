@@ -15,7 +15,8 @@
                                                "violationTitle": "…",
                                                "protocolNumber": "02-08-051-01-7-000000",
                                                "violationDate": "2026-08-30T13:08:59",
-                                               "violationPlace": "…"}],
+                                               "violationPlace": "…",
+                                               "deliveryDate": null}],
                               "erpnProtocols": []}},
      "penaltyBG": {"quantity": 2, "sum": 600.0}, "penaltyERN": {"quantity": 0, "sum": 0.0},
      "totalPenalties": 2, "sumPenalties": 600.0}
@@ -26,9 +27,13 @@
    message=NOT_FOUND` — ровно как машина без штрафов. Различает их только
    `currentInfo`: у настоящей машины там марка и модель. Иначе опечатка в
    госномере навсегда выглядела бы как чистая машина.
-2. **Сумм две.** `fineAmount` — полная, `fineAmountToPay` — со скидкой и
-   только `discountDaysLeft` дней. Хранить одну «сумму» нельзя: после
-   истечения скидки любая из них по отдельности врёт.
+2. **Сумм две, и срок скидки идёт от ВРУЧЕНИЯ.** `fineAmount` — полная,
+   `fineAmountToPay` — со скидкой и только `discountDaysLeft` дней, считая от
+   `deliveryDate`. Пустой `deliveryDate` означает «постановление не вручено»:
+   отсчёт не начался, и предельной даты у скидки пока нет. Именно поэтому
+   06.09 сервис отдавал «30 дней» по нарушению от 30.08 — не потому, что
+   считает от даты нарушения. Хранить одну «сумму» нельзя: после истечения
+   скидки любая из них по отдельности врёт.
 3. **Протоколов тоже два вида.** `bgProtocols` — автофиксация («Безопасный
    город»), `erpnProtocols` — протоколы из электронного реестра. Живого
    образца ERPN у нас не было, поэтому он разбирается теми же ключами, а всё
@@ -40,11 +45,18 @@ import json
 import logging
 from typing import Any
 
-from app.fines_sources import ParsedViolation, normalize_amount, normalize_date
+from app.fines_sources import (
+    ParsedViolation,
+    normalize_amount,
+    normalize_date,
+    normalize_day,
+)
 
 log = logging.getLogger(__name__)
 
-PROTOCOL_KEYS = ("bgProtocols", "erpnProtocols")
+# Ключ ответа → вид протокола: bg — автофиксация «Безопасный город»,
+# erpn — электронный реестр протоколов.
+PROTOCOL_KEYS = {"bgProtocols": "bg", "erpnProtocols": "erpn"}
 NOTE_LIMIT = 500
 
 
@@ -68,24 +80,35 @@ def expected_counts(payload: Any) -> int | None:
     return total if isinstance(total, int) else None
 
 
-def _note(record: dict) -> str | None:
-    """Статья, название нарушения и место — то, чего нет у carcheck."""
+def _details(record: dict) -> dict[str, Any]:
+    """Разносит подробности нарушения по полям — это и есть смысл источника.
+
+    Если не узнаны ни статья, ни название, форма записи незнакома (ждём живой
+    ERPN): кладём сырьё в примечание, а не догадку — по нему потом снимем
+    формат.
+    """
     article = " ".join(
         str(record[key]).strip()
         for key in ("article", "part")
         if record.get(key) not in (None, "")
     )
     title = str(record.get("violationTitle") or "").strip()
+    # Место приходит с переводами строк и двойными пробелами.
     place = " ".join(str(record.get("violationPlace") or "").split())
+    payment_code = str(record.get("paymentCode") or "").strip()
 
-    known = [part for part in (article, title) if part]
-    head = " — ".join(known)
-    if not known:
-        # Форма записи незнакома (ждём живой ERPN): показываем сырьё, а не
-        # догадку — по нему потом снимем формат.
-        head = "не разобрано: " + json.dumps(record, ensure_ascii=False)
-    text = f"{head} · {place}" if place else head
-    return text[:NOTE_LIMIT] or None
+    known = bool(article or title)
+    return {
+        "article": article[:64] or None,
+        "violation_title": title or None,
+        "place": place or None,
+        "payment_code": payment_code[:32] or None,
+        "note": (
+            None
+            if known
+            else ("не разобрано: " + json.dumps(record, ensure_ascii=False))[:NOTE_LIMIT]
+        ),
+    }
 
 
 def _days_left(raw: Any, ref: Any) -> int | None:
@@ -117,7 +140,7 @@ def parse_violations(payload: Any) -> tuple[list[ParsedViolation], list[dict]]:
     if not isinstance(data, dict):
         return parsed, unparsed
 
-    for key in PROTOCOL_KEYS:
+    for key, kind in PROTOCOL_KEYS.items():
         records = data.get(key)
         if not isinstance(records, list):
             continue
@@ -135,9 +158,11 @@ def parse_violations(payload: Any) -> tuple[list[ParsedViolation], list[dict]]:
                     external_ref=str(ref)[:64],
                     issued_at=normalize_date(record.get("violationDate")),
                     amount=normalize_amount(record.get("fineAmount")),
-                    note=_note(record),
                     amount_to_pay=normalize_amount(record.get("fineAmountToPay")),
                     discount_days_left=discount_days,
+                    delivery_date=normalize_day(record.get("deliveryDate")),
+                    protocol_kind=kind,
+                    **_details(record),
                 )
             )
 

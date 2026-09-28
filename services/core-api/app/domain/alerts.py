@@ -96,6 +96,10 @@ async def resolve_open(
     return alert
 
 
+async def get_alert(session: AsyncSession, alert_id: int) -> Alert | None:
+    return await session.get(Alert, alert_id)
+
+
 async def list_alerts(
     session: AsyncSession, *, status: str | None = "open", car_id: int | None = None
 ) -> list[Alert]:

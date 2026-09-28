@@ -61,7 +61,9 @@ def test_all_six_real_fines_are_parsed():
     assert len(parsed) == 6
     assert unparsed == []
     assert parsed[0].external_ref == "00-00-000-00-0-100001"
-    assert parsed[0].note == "AFP", "тип нарушения — единственное описание от сервиса"
+    # Тип нарушения — единственное описание от сервиса, и с 0015 у него своё поле.
+    assert parsed[0].protocol_kind == "afp"
+    assert parsed[0].note is None
 
 
 def test_amount_is_absent_and_not_invented():

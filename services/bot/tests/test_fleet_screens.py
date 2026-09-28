@@ -2,12 +2,8 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-
-from datetime import datetime, timedelta, timezone
-
 from app.callbacks import FleetCB
 from app.handlers import fleet
-from app.handlers.fleet import fine_line
 from tests.conftest import ADMIN_ID, FakeApi
 
 
@@ -186,72 +182,3 @@ async def test_blocked_car_offers_unblock_button():
 
 async def test_free_car_has_no_unblock_button():
     assert fleet.state_keyboard(3, {"engine_blocked": False}) is None
-
-
-# --- строка штрафа со скидкой (tolom) ----------------------------------------
-
-
-def _fine(**over) -> dict:
-    fine = {
-        "status": "unpaid",
-        "issued_at": "2026-08-30T13:08:59+06:00",
-        "amount": "1000.00",
-        "amount_to_pay": "300.00",
-        "discount_days_left": 30,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "note": "Ст. 187 ч. 1 — превышение скорости",
-    }
-    fine.update(over)
-    return fine
-
-
-def test_fine_line_shows_discount_and_reason():
-    line = fine_line(_fine())
-
-    assert "2026-08-30" in line
-    assert "1000 сом" in line
-    assert "к оплате 300 сом, скидка ещё 30 дн." in line
-    assert "превышение скорости" in line
-
-
-def test_expired_discount_is_not_shown_as_live():
-    """Поля скидки снимаются при импорте и не пересчитываются, а время идёт."""
-    long_ago = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
-
-    line = fine_line(_fine(created_at=long_ago))
-
-    assert "скидка ещё" not in line, "через два месяца это была бы неправда"
-    assert "к оплате 300 сом" in line
-    assert "уточните" in line
-
-
-def test_discount_line_names_the_date_it_was_taken_on():
-    """Цифра скидки верна только на дату проверки — так и пишем."""
-    line = fine_line(_fine(created_at="2026-09-05T10:00:00+00:00"))
-
-    assert "2026-09-05" in line or "уточните" in line
-
-
-def test_service_text_is_escaped():
-    """В примечании лежит текст сервиса, а parse_mode=HTML включён глобально."""
-    line = fine_line(_fine(note='<a href="http://evil">клик</a> & Co'))
-
-    assert "<a href" not in line
-    assert "&lt;a href" in line
-    assert "&amp; Co" in line
-
-
-def test_fine_line_reads_without_discount_fields():
-    """Штраф из carcheck и заведённый руками: скидки нет вовсе."""
-    line = fine_line({"status": "unpaid", "issued_at": "2026-08-10", "amount": "500.00"})
-
-    assert "500 сом" in line
-    assert "к оплате" not in line
-    assert "не оплачен" in line
-
-
-def test_fine_line_without_amount_says_so():
-    """carcheck сумм не отдаёт — прочерк выглядел бы как ноль."""
-    line = fine_line({"status": "unpaid", "issued_at": "2026-08-10", "amount": None})
-
-    assert "сумма неизвестна" in line

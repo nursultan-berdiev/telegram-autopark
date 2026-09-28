@@ -26,21 +26,29 @@ def _safe_detail(exc: BaseException) -> str:
 
 
 @contextmanager
-def record_run(task: str, periodic_task_id: int | None = None) -> Iterator[TaskRun]:
+def record_run(
+    task: str, periodic_task_id: int | None = None, run_id: int | None = None
+) -> Iterator[TaskRun]:
     """Открывает запись о прогоне и закрывает её любым исходом.
 
     Незаписанный прогон — это молчаливый отказ: снаружи он неотличим от
     успешного и пустого, и парк копил бы штрафы незаметно.
+
+    `run_id` подхватывает строку, заведённую при постановке в очередь: кнопка
+    «Проверить сейчас» ждёт результат именно своего прогона, а по времени
+    старта его не отличить от кронового, начавшегося в ту же секунду.
     """
     with Session(sync_engine()) as session:
-        run = TaskRun(
-            task=task,
-            periodic_task_id=periodic_task_id,
-            status=TaskRunStatus.failed,
-            started_at=datetime.now(timezone.utc),
-        )
-        session.add(run)
-        session.commit()
+        run = session.get(TaskRun, run_id) if run_id is not None else None
+        if run is None:
+            run = TaskRun(
+                task=task,
+                periodic_task_id=periodic_task_id,
+                status=TaskRunStatus.failed,
+                started_at=datetime.now(timezone.utc),
+            )
+            session.add(run)
+            session.commit()
         try:
             yield run
         except Exception as exc:

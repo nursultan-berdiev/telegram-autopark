@@ -14,6 +14,7 @@ from app.callbacks import (
     AlertCB,
     CarCB,
     DriverCB,
+    FineCB,
     NewDriverCB,
     PaymentCB,
     ReportCB,
@@ -54,6 +55,13 @@ CALLBACKS = [
     AlertCB(action="retry", alert_id=1, car_id=1),
     AlertCB(action="ack", alert_id=1),
     AlertCB(action="maint_done", alert_id=1, car_id=1),
+    # Штрафы: карточка, страницы и отметка об оплате во всех областях списка.
+    FineCB(action="card", fine_id=999999, scope="car", ref_id=1),
+    FineCB(action="card", fine_id=999999, scope="fleet", page=3),
+    FineCB(action="card", fine_id=999999, scope="alert", ref_id=42, page=1),
+    FineCB(action="page", scope="mine", ref_id=1, page=2),
+    FineCB(action="pay", fine_id=999999, scope="fleet"),
+    FineCB(action="check"),
 ]
 
 

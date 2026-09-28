@@ -53,6 +53,12 @@ class Settings(BaseSettings):
     tolom_url: str = Field(default="https://tolom.kg/api/v1", alias="TOLOM_URL")
     tolom_timeout_seconds: float = Field(default=30.0, alias="TOLOM_TIMEOUT_SECONDS")
     tolom_pause_seconds: float = Field(default=3.0, alias="TOLOM_PAUSE_SECONDS")
+    # Предохранитель массового закрытия: если за прогон «пропало» больше
+    # штрафов, чем бывает оплат за сутки, это скорее молча изменившийся ответ
+    # сервиса, чем удачный день. Такое закрытие отменяется целиком.
+    fines_close_max_per_run: int = Field(
+        default=25, alias="FINES_CLOSE_MAX_PER_RUN"
+    )
 
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")

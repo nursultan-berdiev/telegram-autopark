@@ -275,8 +275,27 @@ class ApiClient:
         )
 
     # --- Штрафы и ТО ---------------------------------------------------------
-    async def fines(self, car_id: int) -> list[dict]:
-        return await self._request("GET", f"/cars/{car_id}/fines")
+    async def fines(self, car_id: int, *, only_unpaid: bool = False) -> list[dict]:
+        params = {"only_unpaid": "true"} if only_unpaid else None
+        return await self._request("GET", f"/cars/{car_id}/fines", params=params)
+
+    async def fine(self, fine_id: int) -> dict:
+        return await self._request("GET", f"/fines/{fine_id}")
+
+    async def fleet_fines(self, *, tg_id: int, only_unpaid: bool = True) -> list[dict]:
+        return await self._request(
+            "GET",
+            "/fines",
+            params={"only_unpaid": "true" if only_unpaid else "false"},
+            tg_id=tg_id,
+        )
+
+    async def check_fines(self, *, tg_id: int) -> dict:
+        """Ставит проверку парка в очередь и отдаёт прогон, за которым следить."""
+        return await self._request("POST", "/fines/check", tg_id=tg_id)
+
+    async def task_run(self, run_id: int, *, tg_id: int) -> dict:
+        return await self._request("GET", f"/task-runs/{run_id}", tg_id=tg_id)
 
     async def add_fine(self, car_id: int, *, tg_id: int, **payload: Any) -> dict:
         return await self._request(
@@ -300,6 +319,9 @@ class ApiClient:
         )
 
     # --- Алерты и команды ----------------------------------------------------
+    async def alert(self, alert_id: int) -> dict:
+        return await self._request("GET", f"/alerts/{alert_id}")
+
     async def alerts(self, status: str = "open") -> list[dict]:
         return await self._request("GET", "/alerts", params={"status": status})
 

@@ -18,3 +18,6 @@ class RoleFilter(BaseFilter):
 IsAdmin = RoleFilter(Role.admin)
 IsDriver = RoleFilter(Role.driver)
 IsGuest = RoleFilter(Role.guest)
+# Экраны, куда ходят обе роли, но с разной областью видимости: гость должен
+# отсекаться фильтром, а не проверкой внутри хендлера — забыть её слишком легко.
+IsAdminOrDriver = RoleFilter(Role.admin, Role.driver)
