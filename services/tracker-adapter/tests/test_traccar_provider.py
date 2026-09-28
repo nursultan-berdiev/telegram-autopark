@@ -261,6 +261,8 @@ async def test_ws_stream_yields_normalized_points_from_connected_socket():
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/session":
             return _session_ok(request)
+        if request.url.path == "/api/devices":
+            return httpx.Response(200, json=DEVICES)
         return httpx.Response(404)
 
     provider = _make_provider(handler, ws_connect=ws_connect)
@@ -269,7 +271,8 @@ async def test_ws_stream_yields_normalized_points_from_connected_socket():
     point = await gen.__anext__()
     await gen.aclose()
 
-    assert point.external_id == str(RAW_POSITION["deviceId"])
+    # deviceId 501 -> uniqueId по карте устройств (стрим строит её на подключении).
+    assert point.external_id == "9175358042"
     assert point.lat == RAW_POSITION["latitude"]
     assert point.engine_blocked is False
 

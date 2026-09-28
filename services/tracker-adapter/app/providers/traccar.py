@@ -203,8 +203,13 @@ class TraccarProvider(TrackerProvider):
                     await self._authenticate()
                 # WS-кадры несут числовой deviceId, а привязка идёт по uniqueId:
                 # без карты устройств _normalize пометит все точки как "1".."5"
-                # (непривязанные). Обновляем её на каждом (ре)подключении.
-                await self.list_devices()
+                # (непривязанные). Обновляем её на каждом (ре)подключении. Сбой
+                # /api/devices не рвём в реконнект — WS обычно жив, оставляем
+                # прежнюю карту (в крайнем случае — фолбэк на числовой id).
+                try:
+                    await self.list_devices()
+                except Exception:
+                    logger.warning("не удалось обновить список устройств Traccar", exc_info=True)
                 headers = {"Cookie": self._cookie_header()}
                 async with self._ws_connect(self._ws_url(), additional_headers=headers) as ws:
                     backoff = _WS_BACKOFF_INITIAL  # соединение установлено — сбрасываем бэкофф
