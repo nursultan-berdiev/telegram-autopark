@@ -48,14 +48,14 @@ async def test_reminds_day_before(session):
 
 
 async def test_reminds_overdue_with_debt(session):
-    # срок был 05.07, «сейчас» 10.07 → просрочка, долг за пропущенные периоды
+    # срок был 05.07 (вс → фактически пн 06.07), «сейчас» пт 10.07 → просрочка
     await _driver_with_schedule(session, next_due=datetime(2026, 7, 5, tzinfo=UTC))
     plan = await rem.collect(session, datetime(2026, 7, 10, 3, tzinfo=UTC), TZ)
 
     assert len(plan.reminders) == 1
     r = plan.reminders[0]
     assert r.kind == rem.KIND_OVERDUE
-    assert "Просрочка 5 дн." in r.text
+    assert "Просрочка 4 дн." in r.text
     assert plan.total_debt > 0
 
 
@@ -111,7 +111,7 @@ async def test_owner_digest_lists_everyone(session):
     digest = plan.owner_digest()
     assert digest is not None
     assert "Водитель 1" in digest and "Водитель 2" in digest
-    assert "просрочен 5 дн." in digest and "срок сегодня" in digest
+    assert "просрочен 4 дн." in digest and "срок сегодня" in digest
     assert "Суммарный долг" in digest
 
 
@@ -124,3 +124,13 @@ async def test_timezone_boundary(session):
     plan = await rem.collect(session, datetime(2026, 7, 11, 1, tzinfo=UTC), TZ)
 
     assert plan.reminders[0].kind == rem.KIND_DUE_TODAY
+
+
+async def test_sunday_driver_left_alone_owner_still_informed(session):
+    # срок сб 03.10.2026 не оплачен; «сейчас» вс 04.10 09:00 по Бишкеку
+    await _driver_with_schedule(session, next_due=datetime(2026, 10, 3, tzinfo=UTC))
+    plan = await rem.collect(session, datetime(2026, 10, 4, 3, tzinfo=UTC), TZ)
+
+    assert plan.reminders == []
+    digest = plan.owner_digest()
+    assert digest is not None and "просрочен 1 дн." in digest

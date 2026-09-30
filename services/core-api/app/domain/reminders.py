@@ -1,7 +1,8 @@
 """Ежедневные напоминания о платежах.
 
-Водителю — накануне, в день срока и при просрочке (не чаще раза в день).
-Владельцу — одна утренняя сводка: кто платит сегодня, кто должен.
+Водителю — накануне, в день срока и при просрочке (не чаще раза в день), кроме
+воскресенья: выходной. Владельцу — одна утренняя сводка: кто платит сегодня,
+кто должен; её шлём и в воскресенье.
 
 Отбор вынесен в чистую функцию `collect`, отправка — отдельно: так логику можно
 проверить тестами без Telegram.
@@ -17,7 +18,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Car, Driver, PaymentSchedule
-from app.domain.schedules import ScheduleStatus, due_summary, fmt_money, schedule_status
+from app.domain.schedules import (
+    DAY_OFF,
+    ScheduleStatus,
+    due_summary,
+    fmt_money,
+    schedule_status,
+)
 
 log = logging.getLogger(__name__)
 
@@ -92,6 +99,7 @@ async def collect(
     """
     tzinfo = ZoneInfo(tz)
     today = now.astimezone(tzinfo).date()
+    day_off = today.weekday() == DAY_OFF
 
     rows = await session.execute(
         select(PaymentSchedule, Driver, Car)
@@ -116,6 +124,8 @@ async def collect(
         if st.is_overdue:
             plan.total_debt += float(st.debt_now)
 
+        if day_off:
+            continue
         # Водителю — не чаще одного напоминания в локальный день.
         if not force and schedule.last_reminded_on == today:
             continue

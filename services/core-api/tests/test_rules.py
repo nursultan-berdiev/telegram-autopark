@@ -69,7 +69,8 @@ async def test_overdue_rule_raises_alert_once(session):
     alerts = await alerts_domain.list_alerts(session, status="open")
     assert len(alerts) == 1
     assert alerts[0].type is AlertType.overdue_payment
-    assert alerts[0].payload["overdue_days"] >= 20
+    # 20 календарных дней без воскресений
+    assert alerts[0].payload["overdue_days"] >= 16
 
 
 async def test_alert_auto_resolves_when_paid(session):
