@@ -12,6 +12,10 @@ FR-SCH-1..5 + открытый вопрос §92 (просрочка/части�
 - Просрочка считается на момент запроса: сколько крайних сроков уже наступило
   и не закрыто. Долг = остаток текущего периода + полные суммы остальных
   наступивших периодов.
+- Воскресенье — выходной: за него не платят, срок на него не падает (переносится
+  на понедельник) и в дни просрочки оно не идёт. В БД лежит плановая дата, а
+  перенос считается при чтении — иначе ежемесячный график навсегда съезжал бы
+  с числа месяца.
 """
 from __future__ import annotations
 
@@ -19,16 +23,20 @@ import calendar
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.db.models import PaymentSchedule, SchedulePeriod
 
 _CENT = Decimal("0.01")
 # Защита от зацикливания при подсчёте наступивших периодов (advance всегда
 # двигает дату вперёд минимум на день, но предел оставляем на всякий случай).
 _MAX_PERIODS = 100_000
+# Выходной автопарка в терминах date.weekday(): пн=0 … вс=6.
+DAY_OFF = 6
 
 
 # Деньги приходят из разных источников: float от ИИ, Decimal из БД, str из ввода.
@@ -43,6 +51,41 @@ def _money(value: Money) -> Decimal:
 def _aware(dt: datetime) -> datetime:
     """Гарантирует tz-aware datetime (в БД/SQLite дата может быть naive)."""
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+def _is_day_off(dt: datetime) -> bool:
+    """День недели — по часовому поясу парка, а не по UTC."""
+    return _aware(dt).astimezone(ZoneInfo(settings.timezone)).weekday() == DAY_OFF
+
+
+def effective_due_date(due: datetime) -> datetime:
+    """Фактический срок: плановая дата на воскресенье переносится на понедельник."""
+    due = _aware(due)
+    return due + timedelta(days=1) if _is_day_off(due) else due
+
+
+def _add_working_days(dt: datetime, days: int) -> datetime:
+    """Отсчитывает `days` дней вперёд, не считая воскресений."""
+    for _ in range(days):
+        dt += timedelta(days=1)
+        if _is_day_off(dt):
+            dt += timedelta(days=1)
+    return dt
+
+
+def _overdue_days(due: datetime, now: datetime) -> int:
+    """Дни просрочки без воскресений; прошедший срок — минимум один день.
+
+    Не заплатил в субботу: в воскресенье просрочка 1 день, в понедельник всё
+    ещё 1 — выходной её не наращивает.
+    """
+    elapsed = (now - due).days
+    if elapsed < 1:
+        return 0
+    days_off = sum(
+        _is_day_off(due + timedelta(days=k)) for k in range(1, elapsed + 1)
+    )
+    return max(elapsed - days_off, 1)
 
 
 def fmt_money(value: Money) -> str:
@@ -62,15 +105,20 @@ def add_months(dt: datetime, months: int) -> datetime:
 def advance_due_date(
     current: datetime, period: SchedulePeriod, interval_days: int | None
 ) -> datetime:
-    """Вычисляет следующую дату платежа от текущей по периодичности."""
+    """Вычисляет следующую плановую дату платежа от текущей по периодичности.
+
+    Дневные периоды считаются в рабочих днях от фактического срока: за
+    воскресенье не платят. Неделя и месяц идут от плановой даты, чтобы перенос
+    с воскресенья не сдвигал график.
+    """
     if period is SchedulePeriod.daily:
-        return current + timedelta(days=1)
+        return _add_working_days(effective_due_date(current), 1)
     if period is SchedulePeriod.weekly:
         return current + timedelta(days=7)
     if period is SchedulePeriod.monthly:
         return add_months(current, 1)
     if period is SchedulePeriod.custom:
-        return current + timedelta(days=interval_days or 1)
+        return _add_working_days(effective_due_date(current), interval_days or 1)
     raise ValueError(f"Неизвестная периодичность: {period}")
 
 
@@ -80,7 +128,7 @@ def count_due_periods(
     period: SchedulePeriod,
     interval_days: int | None,
 ) -> int:
-    """Сколько крайних сроков уже наступило (<= now), начиная с next_due.
+    """Сколько фактических сроков уже наступило (<= now), начиная с next_due.
 
     0 — срок ещё не наступил; 1 — наступил текущий период; >1 — накопилась
     просрочка на несколько периодов.
@@ -88,7 +136,7 @@ def count_due_periods(
     now = _aware(now)
     d = _aware(next_due)
     count = 0
-    while d <= now and count < _MAX_PERIODS:
+    while effective_due_date(d) <= now and count < _MAX_PERIODS:
         count += 1
         d = advance_due_date(d, period, interval_days)
     return count
@@ -139,15 +187,15 @@ def schedule_status(
     paid = _money(schedule.paid_in_period)
     # Переплата на неактивном графике не должна давать отрицательный остаток.
     remaining_current = max(amount - paid, Decimal("0.00"))
-    next_due = _aware(schedule.next_due_date)
+    next_due = effective_due_date(schedule.next_due_date)
 
     overdue_periods = count_due_periods(
-        next_due, now, schedule.period, schedule.interval_days
+        schedule.next_due_date, now, schedule.period, schedule.interval_days
     )
     is_overdue = overdue_periods >= 1
     if is_overdue:
         debt_now = remaining_current + (overdue_periods - 1) * amount
-        overdue_days = (now - next_due).days
+        overdue_days = _overdue_days(next_due, _aware(now))
     else:
         debt_now = Decimal("0.00")
         overdue_days = 0
@@ -255,5 +303,5 @@ async def apply_payment(
         periods_closed=periods,
         paid_in_period=credit,
         remaining_current=max(amount - credit, Decimal("0.00")),
-        next_due_date=_aware(schedule.next_due_date),
+        next_due_date=effective_due_date(schedule.next_due_date),
     )
