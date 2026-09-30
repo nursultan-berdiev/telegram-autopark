@@ -19,8 +19,9 @@ def test_advance_due_date():
     assert sched.advance_due_date(d, SchedulePeriod.monthly, None) == datetime(
         2024, 2, 29, tzinfo=UTC
     )
+    # 10 дней без воскресений 04.02 и 11.02
     assert sched.advance_due_date(d, SchedulePeriod.custom, 10) == datetime(
-        2024, 2, 10, tzinfo=UTC
+        2024, 2, 12, tzinfo=UTC
     )
 
 
@@ -118,7 +119,7 @@ async def test_status_overdue_single_period(session):
     )
     st = sched.schedule_status(s, now=datetime(2024, 1, 15, tzinfo=UTC))
     assert st.is_overdue and st.overdue_periods == 1
-    assert st.overdue_days == 5
+    assert st.overdue_days == 4  # 5 календарных минус воскресенье 14.01
     assert float(st.debt_now) == 1500.0
 
 
@@ -184,3 +185,79 @@ async def test_overpaid_inactive_schedule_has_no_negative_remainder(session):
     assert st.remaining_current == Decimal("0.00")
     assert st.debt_now >= Decimal("0.00")
     assert "-" not in sched.due_summary(st)
+
+
+# ------------------------------------------------ воскресенье — выходной
+# Октябрь 2026: пт 02, сб 03, вс 04, пн 05, вт 06. Срок — 00:00 UTC (06:00 в
+# Бишкеке), «сейчас» — 04:00 UTC (10:00 в Бишкеке).
+def _oct(day: int, hour: int = 0) -> datetime:
+    return datetime(2026, 10, day, hour, tzinfo=UTC)
+
+
+def test_daily_and_custom_skip_sunday():
+    assert sched.advance_due_date(_oct(3), SchedulePeriod.daily, None) == _oct(5)
+    # 3 дня от пятницы: сб, пн, вт
+    assert sched.advance_due_date(_oct(2), SchedulePeriod.custom, 3) == _oct(6)
+
+
+async def test_paid_through_saturday_nothing_due_on_sunday(session):
+    s = await _schedule(
+        session, period=SchedulePeriod.daily, amount=1500.0, next_due=_oct(3)
+    )
+    res = await sched.apply_payment(session, s, 1500.0)
+    assert res.next_due_date == _oct(5)
+
+    sunday = sched.schedule_status(s, now=_oct(4, 4))
+    assert not sunday.is_overdue and float(sunday.debt_now) == 0.0
+
+    monday = sched.schedule_status(s, now=_oct(5, 4))
+    assert monday.overdue_periods == 1 and monday.overdue_days == 0
+    assert float(monday.debt_now) == 1500.0
+    assert sched.due_summary(monday) == "срок сегодня, к оплате 1500.00"
+
+
+async def test_unpaid_saturday_sunday_adds_no_debt_or_days(session):
+    s = await _schedule(
+        session, period=SchedulePeriod.daily, amount=1500.0, next_due=_oct(3)
+    )
+    expected = {  # день: (дней просрочки, периодов, долг)
+        4: (1, 1, 1500.0),
+        5: (1, 2, 3000.0),
+        6: (2, 3, 4500.0),
+    }
+    for day, (days, periods, debt) in expected.items():
+        st = sched.schedule_status(s, now=_oct(day, 4))
+        assert (st.overdue_days, st.overdue_periods, float(st.debt_now)) == (
+            days, periods, debt,
+        ), day
+
+
+async def test_daily_start_on_sunday_pays_monday_once(session):
+    s = await _schedule(
+        session, period=SchedulePeriod.daily, amount=1500.0, next_due=_oct(4)
+    )
+    st = sched.schedule_status(s, now=_oct(4, 4))
+    assert st.next_due_date == _oct(5) and not st.is_overdue
+
+    res = await sched.apply_payment(session, s, 1500.0)
+    assert res.next_due_date == _oct(6)
+
+
+async def test_weekly_due_on_sunday_is_due_monday(session):
+    s = await _schedule(
+        session, period=SchedulePeriod.weekly, amount=9000.0, next_due=_oct(4)
+    )
+    st = sched.schedule_status(s, now=_oct(5, 4))
+    assert st.next_due_date == _oct(5)
+    assert st.overdue_periods == 1 and st.overdue_days == 0
+
+
+async def test_monthly_sunday_shift_keeps_day_of_month(session):
+    s = await _schedule(
+        session, period=SchedulePeriod.monthly, amount=30000.0, next_due=_oct(4)
+    )
+    assert sched.schedule_status(s, now=_oct(1)).next_due_date == _oct(5)
+
+    res = await sched.apply_payment(session, s, 30000.0)
+    # от плановой 04.10, а не от фактической 05.10
+    assert res.next_due_date == datetime(2026, 11, 4, tzinfo=UTC)

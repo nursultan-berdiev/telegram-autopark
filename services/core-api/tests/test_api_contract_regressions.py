@@ -6,9 +6,22 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from app.db.models import Car, Driver, PaymentSchedule, SchedulePeriod
+from app.routers import reminders as reminders_router
+
+# Четверг: в воскресенье водителю не напоминают, и тест на реальных часах
+# падал бы раз в неделю.
+_THURSDAY = datetime(2026, 7, 9, 6, tzinfo=timezone.utc)
 
 
-async def _driver_with_schedule(session, *, plate="01KG909AAA", days_ago=0):
+class _FrozenDatetime(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return _THURSDAY.astimezone(tz) if tz else _THURSDAY.replace(tzinfo=None)
+
+
+async def _driver_with_schedule(
+    session, *, plate="01KG909AAA", days_ago=0, now=None
+):
     car = Car(plate=plate)
     session.add(car)
     await session.flush()
@@ -28,7 +41,8 @@ async def _driver_with_schedule(session, *, plate="01KG909AAA", days_ago=0):
             period=SchedulePeriod.weekly,
             amount=Decimal("1000.00"),
             paid_in_period=Decimal("0.00"),
-            next_due_date=datetime.now(timezone.utc) - timedelta(days=days_ago),
+            next_due_date=(now or datetime.now(timezone.utc))
+            - timedelta(days=days_ago),
             active=True,
         )
     )
@@ -61,9 +75,10 @@ async def test_payment_result_reports_prepayment(client, session):
     assert Decimal(body["paid_in_period"]) == Decimal("500.00")
 
 
-async def test_reminders_plan_force_bypasses_antispam(client, session):
+async def test_reminders_plan_force_bypasses_antispam(client, session, monkeypatch):
     """Без force повторный прогон за день пуст — с force снова считает."""
-    car, driver = await _driver_with_schedule(session, days_ago=3)
+    monkeypatch.setattr(reminders_router, "datetime", _FrozenDatetime)
+    car, driver = await _driver_with_schedule(session, days_ago=3, now=_THURSDAY)
 
     first = await client.get("/reminders/plan")
     ids = [r["schedule_id"] for r in first.json()["reminders"]]
