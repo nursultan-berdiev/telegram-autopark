@@ -15,10 +15,13 @@ from app.client import ApiClient, ApiError
 from app.config import settings
 from app.fines_view import esc
 from app.keyboards.fines import fines_page
+from app.notify import DRIVER_BLOCKED_TEXT, notify_driver
 
 log = logging.getLogger(__name__)
 
 RULE_TYPES = {"overdue_payment", "fines_count", "maintenance_km"}
+# Типы алертов, при доставке которых надо уведомить ещё и водителя.
+DRIVER_NOTIFY_TYPES = {"armed_block_fired"}
 
 _SEVERITY_MARK = {"info": "•", "warning": "!", "critical": "!!"}
 
@@ -53,6 +56,22 @@ def alert_keyboard(alert: dict) -> InlineKeyboardMarkup:
                 ),
                 InlineKeyboardButton(
                     text="Отложить",
+                    callback_data=AlertCB(action="ack", alert_id=alert_id).pack(),
+                ),
+            ]
+        ]
+    elif atype == "armed_block_fired":
+        # Взвод сработал — двигатель заглушён; предлагаем сразу разблокировать.
+        rows = [
+            [
+                InlineKeyboardButton(
+                    text="Разблокировать двигатель",
+                    callback_data=AlertCB(
+                        action="unblock", alert_id=alert_id, car_id=car_id
+                    ).pack(),
+                ),
+                InlineKeyboardButton(
+                    text="Понятно",
                     callback_data=AlertCB(action="ack", alert_id=alert_id).pack(),
                 ),
             ]
@@ -157,6 +176,9 @@ async def poll_alerts(bot: Bot, api: ApiClient) -> int:
         delivered += shown
         if shown:
             _delivered.add(alert_id)
+            # Авто-сработавшая блокировка — водитель узнаёт в момент срабатывания.
+            if alert.get("type") in DRIVER_NOTIFY_TYPES:
+                await notify_driver(bot, api, int(alert["car_id"]), DRIVER_BLOCKED_TEXT)
         else:
             # Ни одному админу не дошло — помечать доставленным нельзя, иначе
             # алерт исчезнет навсегда: следующий проход его пропустит.

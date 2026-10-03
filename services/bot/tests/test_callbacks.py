@@ -12,6 +12,7 @@ import pytest
 
 from app.callbacks import (
     AlertCB,
+    ArmCB,
     CarCB,
     DriverCB,
     FineCB,
@@ -55,6 +56,8 @@ CALLBACKS = [
     AlertCB(action="retry", alert_id=1, car_id=1),
     AlertCB(action="ack", alert_id=1),
     AlertCB(action="maint_done", alert_id=1, car_id=1),
+    # Отмена взведённой блокировки — отдельный callback с id команды.
+    ArmCB(action="cancel", car_id=1, cmd_id=99),
     # Штрафы: карточка, страницы и отметка об оплате во всех областях списка.
     FineCB(action="card", fine_id=999999, scope="car", ref_id=1),
     FineCB(action="card", fine_id=999999, scope="fleet", page=3),

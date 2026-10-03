@@ -10,7 +10,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.callbacks import AlertCB, FleetCB
+from app.callbacks import AlertCB, ArmCB, FleetCB
 from app.client import ApiClient, ApiError
 from app.fines_view import list_header
 from app.keyboards.fines import fines_page
@@ -58,18 +58,28 @@ def state_text(state: dict) -> str:
     return "\n".join(lines)
 
 
-def state_keyboard(car_id: int, state: dict) -> InlineKeyboardMarkup:
-    """Переключатель прямо из карточки: заглушить по требованию или вернуть.
+def state_keyboard(
+    car_id: int, state: dict, armed_cmd_id: int | None = None
+) -> InlineKeyboardMarkup:
+    """Переключатель прямо из карточки: заглушить по требованию, вернуть или
+    снять взведённое ожидание.
 
     Блокировку выводим всегда (не только по алерту) — угон, невозврат, ДТП не
     завязаны на правила. Фактическую безопасность держит гейт в core-api:
-    едущую/офлайн-машину он не заглушит, даже если кнопку нажали.
+    едущую/офлайн-машину он сразу не заглушит, а взводит ожидание.
     """
     builder = InlineKeyboardBuilder()
     if state.get("engine_blocked"):
         builder.button(
             text="Разблокировать двигатель",
             callback_data=AlertCB(action="unblock", alert_id=0, car_id=car_id),
+        )
+    elif armed_cmd_id:
+        # Блокировка взведена и ждёт остановки — даём снять её прямо отсюда
+        # (срока у взвода нет, поэтому отмена должна быть под рукой).
+        builder.button(
+            text="Отменить ожидание блокировки",
+            callback_data=ArmCB(action="cancel", car_id=car_id, cmd_id=armed_cmd_id),
         )
     else:
         # Не напрямую в блокировку — через подтверждение (action="block_ask").
@@ -78,6 +88,14 @@ def state_keyboard(car_id: int, state: dict) -> InlineKeyboardMarkup:
             callback_data=AlertCB(action="block_ask", alert_id=0, car_id=car_id),
         )
     return builder.as_markup()
+
+
+def _armed_command_id(commands: list[dict]) -> int | None:
+    """id взведённой (ожидающей) блокировки у машины, если есть."""
+    for command in commands:
+        if command.get("status") == "armed" and command.get("type") == "engine_stop":
+            return command.get("id")
+    return None
 
 
 @router.callback_query(FleetCB.filter(F.action == "state"), IsAdmin)
@@ -91,8 +109,20 @@ async def show_state(
         await query.answer()
         return
 
+    # Взведённая блокировка не хранится в car_state — спрашиваем журнал команд.
+    armed_cmd_id = None
+    try:
+        armed_cmd_id = _armed_command_id(await api.commands(callback_data.car_id) or [])
+    except ApiError as exc:
+        log.warning("не удалось прочитать команды машины %s: %s", callback_data.car_id, exc)
+
+    text = state_text(state)
+    if armed_cmd_id and not state.get("engine_blocked"):
+        text += "\n⏳ Блокировка взведена — сработает, когда машина встанет"
+
     await query.message.answer(
-        state_text(state), reply_markup=state_keyboard(callback_data.car_id, state)
+        text,
+        reply_markup=state_keyboard(callback_data.car_id, state, armed_cmd_id),
     )
     await query.answer()
 

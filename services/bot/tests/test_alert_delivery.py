@@ -72,6 +72,32 @@ async def test_undelivered_alert_is_retried(monkeypatch):
     assert working.sent == [1]
 
 
+async def test_armed_block_fired_notifies_admin_and_driver(monkeypatch):
+    """Автосработавший взвод: админ видит алерт, водитель — уведомление о блокировке."""
+    monkeypatch.setattr(alerts_module.settings, "admin_ids", [1])
+
+    class _ApiWithDriver(_Api):
+        async def car(self, car_id: int) -> dict:
+            return {"id": car_id, "plate": "01KG777AAA", "driver_id": 5}
+
+        async def driver(self, driver_id: int) -> dict:
+            return {"driver": {"id": 5, "tg_user_id": 4242}}
+
+    alert = {
+        "id": 9,
+        "car_id": 3,
+        "car_plate": "01KG777AAA",
+        "type": "armed_block_fired",
+        "severity": "warning",
+        "text": "встала — двигатель заблокирован",
+    }
+    bot, api = _Bot(), _ApiWithDriver([alert])
+
+    assert await poll_alerts(bot, api) == 1
+    assert 1 in bot.sent, "админ должен получить алерт"
+    assert 4242 in bot.sent, "водитель должен быть уведомлён о блокировке"
+
+
 async def test_partial_delivery_counts_as_delivered(monkeypatch):
     """Один админ заблокировал бота — остальные уведомление получили."""
     monkeypatch.setattr(alerts_module.settings, "admin_ids", [1, 2])

@@ -137,6 +137,57 @@ async def test_old_point_does_not_rewind_state(session):
     assert state.speed_knots == pytest.approx(30.0)
 
 
+async def test_armed_block_fires_on_stop_point(client, session, ingest_headers, monkeypatch):
+    """Взведённая блокировка досылается на реле, как только пришла точка-остановка."""
+    from app.db.models import CommandStatus
+    from app.domain import commands as commands_domain
+
+    sent: list[tuple[str, str]] = []
+
+    async def _send(external_id, command, params=None):
+        sent.append((external_id, command))
+        return {"status": "sent", "result": "S20,OK"}
+
+    monkeypatch.setattr(commands_domain, "send_command", _send)
+
+    car, tracker = await _car_with_tracker(session)
+    # Машина едет — взводим блокировку.
+    session.add(
+        CarState(
+            car_id=car.id,
+            tracker_id=tracker.id,
+            last_ts=datetime.now(timezone.utc),
+            speed_knots=20.0,
+            ignition=True,
+            motion=True,
+        )
+    )
+    await session.commit()
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    assert command.status is CommandStatus.armed
+
+    # Пришла точка-остановка — ingest сам дошлёт блокировку.
+    resp = await client.post(
+        "/telemetry/batch",
+        json=[_point(tracker.external_id, speed_knots=0.0, ignition=False, motion=False)],
+        headers=ingest_headers,
+    )
+    assert resp.status_code == 202
+
+    # Читаем результат через HTTP (не смешиваем тестовую сессию с сессией приложения).
+    assert sent == [(tracker.external_id, "engine_stop")]
+    audit = await client.get(f"/cars/{car.id}/commands")
+    statuses = {c["id"]: c["status"] for c in audit.json()}
+    assert statuses[command.id] == "sent"
+
+    alerts = await client.get("/alerts", params={"status": "open"})
+    assert "armed_block_fired" in [a["type"] for a in alerts.json()]
+
+
 async def test_future_device_clock_does_not_break_age(session):
     """Часы трекера ушли вперёд — возраст точки не должен быть отрицательным."""
     car, tracker = await _car_with_tracker(session)
