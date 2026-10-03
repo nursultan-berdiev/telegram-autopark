@@ -7,54 +7,22 @@ from __future__ import annotations
 
 import logging
 
-from aiogram import Bot, F, Router
+from aiogram import F, Router
 from aiogram.types import CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.callbacks import AlertCB
+from app.callbacks import AlertCB, ArmCB
 from app.client import ApiClient, ApiError
 from app.filters import IsAdmin
+from app.notify import DRIVER_BLOCKED_TEXT, DRIVER_UNBLOCKED_TEXT, notify_driver
 
 log = logging.getLogger(__name__)
 
 router = Router(name="alerts")
 
-_GATE_HINT = "Блокировка отложена: {reason}. Повторите, когда машина встанет."
-
-DRIVER_BLOCKED_TEXT = (
-    "Двигатель вашего автомобиля {plate} заблокирован администратором парка. "
-    "Свяжитесь с парком, чтобы решить вопрос."
-)
-DRIVER_UNBLOCKED_TEXT = "Двигатель вашего автомобиля {plate} разблокирован."
-
-
-async def _notify_driver(bot: Bot, api: ApiClient, car_id: int, text_template: str) -> None:
-    """Водитель обязан узнать о блокировке — это и UX, и юридика аренды."""
-    try:
-        car = await api.car(car_id)
-    except ApiError as exc:
-        log.warning("не удалось получить машину %s для уведомления: %s", car_id, exc)
-        return
-
-    driver_id = car.get("driver_id")
-    if not driver_id:
-        return
-    try:
-        driver = await api.driver(driver_id)
-    except ApiError as exc:
-        log.warning("не удалось получить водителя %s: %s", driver_id, exc)
-        return
-
-    payload = driver.get("driver", driver)
-    tg_user_id = payload.get("tg_user_id")
-    if not tg_user_id:
-        return
-    try:
-        await bot.send_message(
-            tg_user_id, text_template.format(plate=car.get("plate", ""))
-        )
-    except Exception as e:  # noqa: BLE001 — недоставленное уведомление не отменяет команду
-        log.warning("не удалось уведомить водителя %s: %s", tg_user_id, e)
+# Уведомление водителя живёт в app.notify (его же зовёт опрос алертов при
+# автосрабатывании взвода). Имя сохраняем для ссылок внутри модуля и тестов.
+_notify_driver = notify_driver
 
 
 @router.callback_query(AlertCB.filter(F.action.in_({"block", "retry"})), IsAdmin)
@@ -68,6 +36,7 @@ async def block_engine(
             type="engine_block",
             requested_by=callback.from_user.id,
             alert_id=callback_data.alert_id or None,
+            arm_if_unsafe=True,  # едет/офлайн — не отказываем, а взводим
         )
     except ApiError as exc:
         await callback.message.answer(f"Не удалось заблокировать: {exc.human}")
@@ -91,9 +60,20 @@ async def block_engine(
         await _notify_driver(
             callback.bot, api, callback_data.car_id, DRIVER_BLOCKED_TEXT
         )
-    elif status == "blocked_by_safety":
+    elif status == "armed":
+        # Машина в движении/офлайн — блокировка взведена. Водителя пока НЕ
+        # уведомляем: узнает в момент фактического срабатывания.
+        builder = InlineKeyboardBuilder()
+        builder.button(
+            text="Отменить ожидание",
+            callback_data=ArmCB(
+                action="cancel", car_id=callback_data.car_id, cmd_id=command.get("id") or 0
+            ),
+        )
         await callback.message.answer(
-            _GATE_HINT.format(reason=result.get("reason") or "машина не готова")
+            "⏳ Блокировка взведена. Двигатель заглушится автоматически, как "
+            "только машина встанет (стоит, зажигание выключено).",
+            reply_markup=builder.as_markup(),
         )
     else:
         await callback.message.answer(
@@ -130,8 +110,9 @@ async def block_ask(
     )
     builder.adjust(1)
     await callback.message.answer(
-        f"Точно заблокировать двигатель {plate}? Команда уйдёт, только если "
-        "машина стоит с выключенным зажиганием.",
+        f"Заблокировать двигатель {plate}? Если машина стоит с выключенным "
+        "зажиганием — заглушим сразу; если едет — заблокируем автоматически, "
+        "как только встанет.",
         reply_markup=builder.as_markup(),
     )
     await callback.answer()
@@ -143,6 +124,29 @@ async def cancel_action(
 ) -> None:
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("Отменено")
+
+
+@router.callback_query(ArmCB.filter(F.action == "cancel"), IsAdmin)
+async def cancel_armed_block(
+    callback: CallbackQuery, callback_data: ArmCB, api: ApiClient
+) -> None:
+    """Снять взведённую (ожидающую) блокировку, пока она не сработала."""
+    try:
+        result = await api.cancel_command(
+            callback_data.car_id, callback_data.cmd_id, requested_by=callback.from_user.id
+        )
+    except ApiError as exc:
+        await callback.message.answer(f"Не удалось отменить: {exc.human}")
+        await callback.answer()
+        return
+    await callback.message.edit_reply_markup(reply_markup=None)
+    if result.get("ok"):
+        await callback.message.answer("Ожидание блокировки отменено.")
+    else:
+        await callback.message.answer(
+            result.get("reason") or "Блокировка уже не в ожидании."
+        )
+    await callback.answer()
 
 
 @router.callback_query(AlertCB.filter(F.action == "unblock"), IsAdmin)

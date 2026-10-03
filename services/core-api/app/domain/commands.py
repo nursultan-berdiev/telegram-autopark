@@ -9,7 +9,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.adapter import AdapterError, send_command
@@ -109,7 +109,12 @@ async def _recent_duplicate(
         created = created if created.tzinfo else created.replace(tzinfo=timezone.utc)
         fresh = created >= edge
         # acked/failed/unconfirmed — терминальные: повторная команда законна.
-        in_flight = command.status in (CommandStatus.queued, CommandStatus.sent)
+        # armed — ещё в ожидании: повторный взвод должен вернуть ту же команду.
+        in_flight = command.status in (
+            CommandStatus.queued,
+            CommandStatus.sent,
+            CommandStatus.armed,
+        )
         if in_flight or (fresh and command.status is CommandStatus.acked):
             return command
     return None
@@ -122,11 +127,30 @@ async def request_command(
     type_value: str,
     requested_by: int | None,
     alert_id: int | None = None,
+    arm_if_unsafe: bool = False,
     now: datetime | None = None,
 ) -> tuple[Command, bool, str | None]:
-    """Возвращает (команда, отправлена ли, причина отказа)."""
+    """Возвращает (команда, отправлена ли, причина отказа).
+
+    `arm_if_unsafe`: если гейт не пропускает (машина едет/офлайн), не отказываем,
+    а взводим блокировку (`armed`) — отправится сама, когда машина встанет.
+    """
     now = now or datetime.now(timezone.utc)
     ctype = parse_type(type_value)
+
+    # Разблокировка снимает взведённую блокировку этой машины: иначе engine_resume
+    # (например, со старой карточки алерта) не трогает armed engine_stop, и машина
+    # заглушится на остановке вопреки последней воле админа.
+    if ctype is CommandType.engine_resume:
+        await session.execute(
+            update(Command)
+            .where(
+                Command.car_id == car_id,
+                Command.type == CommandType.engine_stop,
+                Command.status == CommandStatus.armed,
+            )
+            .values(status=CommandStatus.failed, result="снята разблокировкой двигателя")
+        )
 
     duplicate = await _recent_duplicate(
         session, car_id=car_id, ctype=ctype, alert_id=alert_id, now=now
@@ -158,6 +182,12 @@ async def request_command(
         gate = check_safety(state, now)
         command.safety_snapshot = gate.snapshot
         if not gate.passed:
+            if arm_if_unsafe:
+                # Не отказываем — взводим: заглушим сами, как только машина встанет.
+                command.status = CommandStatus.armed
+                command.result = gate.reason
+                await session.flush()
+                return command, False, gate.reason
             # Отказ гейта — не ошибка: это штатный статус с понятной причиной.
             command.status = CommandStatus.blocked_by_safety
             command.result = gate.reason
@@ -284,9 +314,183 @@ async def sweep_unconfirmed(
             now=now,
         )
         count += 1
-    if count:
+
+    # Застрявший захват (`queued`) после сбоя/рестарта в окне отправки: возвращаем
+    # в `armed`, чтобы взвод дожил до следующей точки и не блокировал новые команды
+    # через _recent_duplicate. Персистентный `queued` бывает только от fire_armed —
+    # request_command до коммита всегда уводит команду из `queued`.
+    recovered = 0
+    stuck = list(
+        await session.scalars(
+            select(Command).where(
+                Command.status == CommandStatus.queued, Command.type.in_(BLOCK_TYPES)
+            )
+        )
+    )
+    for command in stuck:
+        # Возраст ЗАХВАТА, не создания: created_at у взвода без TTL всегда старый,
+        # а updated_at выставлен моментом захвата (armed -> queued).
+        claimed = command.updated_at
+        if claimed is None:
+            continue
+        claimed = claimed if claimed.tzinfo else claimed.replace(tzinfo=timezone.utc)
+        if claimed > edge:
+            continue  # захват свежий — отправка, возможно, ещё идёт; не трогаем
+        command.status = CommandStatus.armed
+        command.result = "захват завис (сбой/рестарт) — возвращено в ожидание"
+        recovered += 1
+
+    if count or recovered:
         await session.commit()
     return count
+
+
+async def _raise_armed_failed(
+    session: AsyncSession, command: Command, now: datetime
+) -> None:
+    """Терминальный провал взвода — поднимаем алерт, чтобы админ не остался в
+    неведении (для угона/невозврата это самый неприятный исход)."""
+    car = await session.get(Car, command.car_id)
+    plate = car.plate if car else str(command.car_id)
+    await alerts_domain.raise_alert(
+        session,
+        car_id=command.car_id,
+        atype=AlertType.armed_block_failed,
+        severity="warning",
+        payload={"command_id": command.id, "plate": plate, "reason": command.result},
+        text=f"{plate}: отложенная блокировка не сработала — {command.result}",
+        now=now,
+    )
+
+
+async def fire_armed(
+    session: AsyncSession,
+    *,
+    car_ids: list[int] | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Отправляет взведённые блокировки на реле, как только машина встала.
+
+    Зовётся на каждом батче телеметрии: машина только что прислала свежую точку,
+    значит онлайн и известны скорость/зажигание/движение. Пока гейт не пройден —
+    команда остаётся `armed` (срока нет: ждём, пока админ не отменит).
+
+    Перед сетевым вызовом команду атомарно «захватываем» (armed → queued с
+    коммитом): второй параллельный батч и отмена увидят уже не `armed` и
+    пройдут мимо — иначе реле получило бы команду дважды, а отмена во время
+    отправки была бы проигнорирована. Временный сбой адаптера возвращает команду
+    в `armed` (повтор на следующей точке); терминальный провал поднимает алерт.
+    Возвращает число фактически отправленных команд.
+    """
+    now = now or datetime.now(timezone.utc)
+    query = select(Command.id).where(
+        Command.status == CommandStatus.armed, Command.type.in_(BLOCK_TYPES)
+    )
+    if car_ids:
+        query = query.where(Command.car_id.in_(car_ids))
+    candidate_ids = list(await session.scalars(query))
+
+    fired = 0
+    for cmd_id in candidate_ids:
+        command = await session.get(Command, cmd_id)
+        if command is None or command.status != CommandStatus.armed:
+            continue
+        state = await session.get(CarState, command.car_id)
+        gate = check_safety(state, now)
+        if not gate.passed:
+            continue  # ещё не встала — ждём следующую точку, команда остаётся armed
+
+        # Атомарный захват: armed -> queued. Кто не успел (другой батч/отмена) —
+        # получит rowcount 0 и пройдёт мимо.
+        claim = await session.execute(
+            update(Command)
+            .where(Command.id == cmd_id, Command.status == CommandStatus.armed)
+            # updated_at = момент захвата: по нему sweep отличает идущую отправку
+            # от зависшей (created_at у взвода без TTL всегда старый).
+            .values(status=CommandStatus.queued, updated_at=func.now())
+        )
+        if claim.rowcount == 0:
+            await session.rollback()
+            continue
+        await session.commit()  # захват виден другим ДО сетевого вызова
+
+        command = await session.get(Command, cmd_id)
+        command.safety_snapshot = gate.snapshot
+        tracker = await session.scalar(
+            select(Tracker).where(
+                Tracker.car_id == command.car_id, Tracker.active.is_(True)
+            )
+        )
+        if tracker is None:
+            command.status = CommandStatus.failed
+            command.result = "трекер не привязан к машине"
+            await _raise_armed_failed(session, command, now)
+            await session.commit()
+            continue
+
+        # Любой сбой отправки/фиксации возвращает захваченную команду в `armed`,
+        # иначе она навсегда зависла бы в `queued`: не AdapterError (напр. не-JSON
+        # ответ → ValueError в adapter.py), падение raise_alert, рестарт core-api.
+        # Застрявший `queued` не подхватывает ни этот метод, ни sweep, а
+        # _recent_duplicate считал бы его «в полёте» и блокировал новые команды.
+        try:
+            response = await send_command(tracker.external_id, command.type.value)
+            if response.get("status") == "sent":
+                command.status = CommandStatus.sent
+                command.result = str(response.get("result") or "")[:2000]
+                # Окно подтверждения (confirm_by_telemetry/sweep_unconfirmed) мерят
+                # от created_at. У взвода он — момент нажатия (может быть давно),
+                # поэтому переносим его на момент отправки; исходный момент виден в
+                # алерте armed_block_fired. Иначе сработавший взвод никогда бы не
+                # подтвердился и ловил ложный command_unconfirmed.
+                command.created_at = now
+                state = await session.get(CarState, command.car_id)
+                if state is not None:
+                    state.last_command = command.type.value
+                car = await session.get(Car, command.car_id)
+                plate = car.plate if car else str(command.car_id)
+                await alerts_domain.raise_alert(
+                    session,
+                    car_id=command.car_id,
+                    atype=AlertType.armed_block_fired,
+                    severity="warning",
+                    payload={"command_id": command.id, "plate": plate},
+                    text=(
+                        f"{plate} встала — двигатель заблокирован "
+                        "(сработала отложенная блокировка)"
+                    ),
+                    now=now,
+                )
+                fired += 1
+            else:
+                command.status = CommandStatus.failed
+                command.result = str(response.get("result") or "адаптер не принял команду")[:2000]
+                await _raise_armed_failed(session, command, now)
+            await session.commit()
+        except Exception as exc:  # noqa: BLE001
+            await session.rollback()
+            stuck = await session.get(Command, cmd_id)
+            if stuck is not None and stuck.status is CommandStatus.queued:
+                stuck.status = CommandStatus.armed
+                stuck.result = f"сбой отправки, повтор на следующей точке: {exc}"[:2000]
+                await session.commit()
+
+    return fired
+
+
+async def cancel_armed(
+    session: AsyncSession, *, car_id: int, command_id: int
+) -> tuple[Command | None, bool, str | None]:
+    """Снимает взведённую блокировку, пока она не сработала."""
+    command = await session.get(Command, command_id)
+    if command is None or command.car_id != car_id:
+        return None, False, "команда не найдена"
+    if command.status != CommandStatus.armed:
+        return command, False, "блокировка уже не в ожидании"
+    command.status = CommandStatus.failed
+    command.result = "ожидание отменено администратором"
+    await session.flush()
+    return command, True, None
 
 
 async def list_commands(session: AsyncSession, car_id: int) -> list[Command]:

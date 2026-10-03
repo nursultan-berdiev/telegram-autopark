@@ -8,6 +8,7 @@ from app.db.models import (
     CarState,
     Command,
     CommandStatus,
+    CommandType,
     Tracker,
     TrackerProvider,
 )
@@ -265,6 +266,344 @@ async def test_alarm_command_is_not_confirmed_by_engine_bit(session, adapter_ok)
     assert await commands_domain.sweep_unconfirmed(session, now=later) == 0, (
         "ложный алерт «нет реле» по команде сигнализации не нужен"
     )
+
+
+async def test_block_arms_when_car_is_moving(session, adapter_ok):
+    """arm_if_unsafe: едущую машину не отклоняем, а взводим — реле пока молчит."""
+    car, _ = await _car(session, speed=20.0, motion=True)
+
+    command, ok, reason = await commands_domain.request_command(
+        session,
+        car_id=car.id,
+        type_value="engine_block",
+        requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    assert ok is False
+    assert reason == "машина в движении"
+    assert command.status is CommandStatus.armed
+    assert command.safety_snapshot is not None
+    assert adapter_ok == [], "взвод не должен слать на реле"
+
+
+async def test_armed_block_fires_when_car_stops(session, adapter_ok):
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session,
+        car_id=car.id,
+        type_value="engine_block",
+        requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    # Машина встала и прислала свежую точку.
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+
+    fired = await commands_domain.fire_armed(session, car_ids=[car.id])
+
+    assert fired == 1
+    assert adapter_ok == [("9175358042", "engine_stop")]
+    assert (await session.get(Command, command.id)).status is CommandStatus.sent
+
+    from app.domain import alerts as alerts_domain
+
+    alerts = await alerts_domain.list_alerts(session, status="open")
+    assert [a.type.value for a in alerts] == ["armed_block_fired"]
+
+
+async def test_armed_block_waits_while_still_moving(session, adapter_ok):
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session,
+        car_id=car.id,
+        type_value="engine_block",
+        requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    assert adapter_ok == []
+    assert (await session.get(Command, command.id)).status is CommandStatus.armed
+
+
+async def test_second_arm_returns_same_command(session, adapter_ok):
+    """Повторный взвод не плодит дублей — возвращает ту же ожидающую команду."""
+    car, _ = await _car(session, speed=20.0, motion=True)
+    first, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    second, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    assert second.id == first.id
+    assert second.status is CommandStatus.armed
+
+
+async def test_cancel_armed_block(session, adapter_ok):
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    cancelled, ok, _ = await commands_domain.cancel_armed(
+        session, car_id=car.id, command_id=command.id
+    )
+    await session.commit()
+
+    assert ok is True
+    assert cancelled.status is CommandStatus.failed
+    assert "отменено" in cancelled.result
+
+    # Повторная отмена — уже не в ожидании.
+    _, ok2, _ = await commands_domain.cancel_armed(
+        session, car_id=car.id, command_id=command.id
+    )
+    assert ok2 is False
+
+    # После отмены срабатывание не должно произойти даже на остановке.
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    assert adapter_ok == []
+
+
+async def test_adapter_error_keeps_block_armed_for_retry(session, monkeypatch):
+    """Временный сбой адаптера не хоронит взвод — пробуем на следующей точке."""
+    from app.clients.adapter import AdapterError
+
+    async def _boom(external_id, command, params=None):
+        raise AdapterError("адаптер недоступен")
+
+    monkeypatch.setattr(commands_domain, "send_command", _boom)
+
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    refreshed = await session.get(Command, command.id)
+    assert refreshed.status is CommandStatus.armed
+    assert "повтор" in refreshed.result
+
+    from app.domain import alerts as alerts_domain
+
+    assert await alerts_domain.list_alerts(session, status="open") == []
+
+
+async def test_terminal_failure_raises_alert(session, monkeypatch):
+    """Адаптер отверг команду — админ должен узнать, а не остаться с тихим failed."""
+    async def _reject(external_id, command, params=None):
+        return {"status": "failed", "result": "устройство не ответило"}
+
+    monkeypatch.setattr(commands_domain, "send_command", _reject)
+
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    assert (await session.get(Command, command.id)).status is CommandStatus.failed
+
+    from app.domain import alerts as alerts_domain
+
+    alerts = await alerts_domain.list_alerts(session, status="open")
+    assert [a.type.value for a in alerts] == ["armed_block_failed"]
+
+
+async def test_unblock_cancels_armed_block(session, adapter_ok):
+    """Разблокировка снимает взвод — иначе машина заглушится вопреки воле админа."""
+    car, _ = await _car(session, speed=20.0, motion=True)
+    block, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    assert block.status is CommandStatus.armed
+
+    await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_unblock", requested_by=111
+    )
+    await session.commit()
+    assert (await session.get(Command, block.id)).status is CommandStatus.failed
+
+    # Машина встала — блокировки быть не должно.
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    assert ("9175358042", "engine_stop") not in adapter_ok
+
+
+async def test_fire_armed_sends_once_on_repeat(session, adapter_ok):
+    """Повторный проход не шлёт команду второй раз (захват снял её с armed)."""
+    car, _ = await _car(session, speed=20.0, motion=True)
+    await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 1
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    assert adapter_ok == [("9175358042", "engine_stop")]
+
+
+async def test_non_adapter_send_error_reverts_to_armed(session, monkeypatch):
+    """Не-AdapterError (напр. не-JSON ответ) не должен оставить команду в queued."""
+    async def _bad(external_id, command, params=None):
+        raise ValueError("ответ адаптера не JSON")
+
+    monkeypatch.setattr(commands_domain, "send_command", _bad)
+
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 0
+    refreshed = await session.get(Command, command.id)
+    assert refreshed.status is CommandStatus.armed, "в queued застрять нельзя"
+    assert "повтор" in refreshed.result
+
+    from app.domain import alerts as alerts_domain
+
+    assert await alerts_domain.list_alerts(session, status="open") == []
+
+
+async def test_sweep_recovers_stuck_queued_claim(session, adapter_ok):
+    """Зависший захват (queued, старый updated_at) sweep возвращает в armed."""
+    car, _ = await _car(session)
+    old = datetime.now(timezone.utc) - timedelta(hours=1)
+    cmd = Command(
+        car_id=car.id,
+        type=CommandType.engine_stop,
+        status=CommandStatus.queued,
+        requested_by=111,
+        created_at=old,
+        updated_at=old,  # момент захвата давно прошёл — точно завис
+    )
+    session.add(cmd)
+    await session.commit()
+
+    await commands_domain.sweep_unconfirmed(session, now=datetime.now(timezone.utc))
+
+    assert (await session.get(Command, cmd.id)).status is CommandStatus.armed
+
+
+async def test_sweep_keeps_fresh_claim(session, adapter_ok):
+    """Свежий захват (старый created_at, но updated_at только что) НЕ трогаем —
+    отправка может ещё идти, иначе вернулась бы двойная отправка."""
+    car, _ = await _car(session)
+    cmd = Command(
+        car_id=car.id,
+        type=CommandType.engine_stop,
+        status=CommandStatus.queued,
+        requested_by=111,
+        created_at=datetime.now(timezone.utc) - timedelta(hours=3),  # взведено давно
+        updated_at=datetime.now(timezone.utc),  # но захвачено только что
+    )
+    session.add(cmd)
+    await session.commit()
+
+    await commands_domain.sweep_unconfirmed(session, now=datetime.now(timezone.utc))
+
+    assert (await session.get(Command, cmd.id)).status is CommandStatus.queued
+
+
+async def test_fired_armed_block_confirms_not_falsely_unconfirmed(session, adapter_ok):
+    """Взвод, ждавший дольше окна подтверждения, после отправки подтверждается
+    телеметрией и не ловит ложный command_unconfirmed (окно мерим от отправки)."""
+    car, _ = await _car(session, speed=20.0, motion=True)
+    command, _, _ = await commands_domain.request_command(
+        session, car_id=car.id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    command.created_at = datetime.now(timezone.utc) - timedelta(hours=1)  # нажато давно
+    await session.commit()
+
+    state = await session.get(CarState, car.id)
+    state.speed_knots = 0.0
+    state.motion = False
+    state.ignition = False
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+    assert await commands_domain.fire_armed(session, car_ids=[car.id]) == 1
+
+    # Sweep сразу после отправки НЕ должен пометить unconfirmed.
+    assert await commands_domain.sweep_unconfirmed(
+        session, now=datetime.now(timezone.utc)
+    ) == 0
+    assert (await session.get(Command, command.id)).status is CommandStatus.sent
+
+    from app.domain import alerts as alerts_domain
+
+    assert [a.type.value for a in await alerts_domain.list_alerts(session, status="open")] == [
+        "armed_block_fired"
+    ]
+
+    # Телеметрия подтверждает блокировку (точка ПОСЛЕ отправки) → acked.
+    state = await session.get(CarState, car.id)
+    state.engine_blocked = True
+    state.last_ts = datetime.now(timezone.utc)
+    await session.commit()
+    assert await commands_domain.confirm_by_telemetry(session) == 1
+    assert (await session.get(Command, command.id)).status is CommandStatus.acked
 
 
 async def test_command_sweep_runs_even_with_rules_disabled(monkeypatch):

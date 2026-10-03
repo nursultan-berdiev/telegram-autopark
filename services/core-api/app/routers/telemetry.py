@@ -46,6 +46,14 @@ async def ingest_batch(
 
     if accepted:
         await commands_domain.confirm_by_telemetry(session, car_ids=touched)
+        # Машина только что прислала свежую точку — если встала, досылаем взвод.
+        # Сбой досылки не должен ронять приём телеметрии (иначе 500 после commit
+        # и адаптер перешлёт батч) — поэтому ловим всё и продолжаем.
+        try:
+            await commands_domain.fire_armed(session, car_ids=touched)
+        except Exception:  # noqa: BLE001
+            await session.rollback()
+            log.exception("не удалось дослать взведённую блокировку")
         await rules_engine.evaluate_after_telemetry(session, car_ids=touched)
 
     if unknown:

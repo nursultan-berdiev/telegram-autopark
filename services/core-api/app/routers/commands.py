@@ -48,10 +48,31 @@ async def create_command(
             type_value=payload.type,
             requested_by=actor,
             alert_id=payload.alert_id,
+            arm_if_unsafe=payload.arm_if_unsafe,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    await session.commit()
+    await session.refresh(command)
+    return CommandResult(command=_to_dto(command), ok=ok, reason=reason)
+
+
+@router.post(
+    "/cars/{car_id}/commands/{command_id}/cancel", response_model=CommandResult
+)
+async def cancel_command(
+    car_id: int,
+    command_id: int,
+    session: AsyncSession = Depends(get_session),
+    actor: int = Depends(require_admin_actor),
+) -> CommandResult:
+    """Снять взведённую блокировку, пока она не сработала (только админ)."""
+    command, ok, reason = await commands_domain.cancel_armed(
+        session, car_id=car_id, command_id=command_id
+    )
+    if command is None:
+        raise NotFound(reason or "команда не найдена")
     await session.commit()
     await session.refresh(command)
     return CommandResult(command=_to_dto(command), ok=ok, reason=reason)

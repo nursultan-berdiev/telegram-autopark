@@ -413,6 +413,8 @@ class AlertType(str, enum.Enum):
     command_unconfirmed = "command_unconfirmed"
     odometer_untrusted = "odometer_untrusted"
     new_fine = "new_fine"
+    armed_block_fired = "armed_block_fired"  # взведённая блокировка сработала
+    armed_block_failed = "armed_block_failed"  # взвод не удалось отправить на реле
 
 
 class AlertStatus(str, enum.Enum):
@@ -431,6 +433,7 @@ class CommandType(str, enum.Enum):
 class CommandStatus(str, enum.Enum):
     queued = "queued"
     blocked_by_safety = "blocked_by_safety"
+    armed = "armed"  # ждёт, пока машина встанет; сработает по безопасной телеметрии
     sent = "sent"
     acked = "acked"
     unconfirmed = "unconfirmed"

@@ -332,12 +332,32 @@ class ApiClient:
         return await self._request("POST", f"/alerts/{alert_id}/resolve")
 
     async def command(
-        self, car_id: int, *, type: str, requested_by: int, alert_id: int | None = None
+        self,
+        car_id: int,
+        *,
+        type: str,
+        requested_by: int,
+        alert_id: int | None = None,
+        arm_if_unsafe: bool = False,
     ) -> dict:
         return await self._request(
             "POST",
             f"/cars/{car_id}/commands",
-            json={"type": type, "requested_by": requested_by, "alert_id": alert_id},
+            json={
+                "type": type,
+                "requested_by": requested_by,
+                "alert_id": alert_id,
+                "arm_if_unsafe": arm_if_unsafe,
+            },
+            tg_id=requested_by,
+        )
+
+    async def cancel_command(
+        self, car_id: int, command_id: int, *, requested_by: int
+    ) -> dict:
+        return await self._request(
+            "POST",
+            f"/cars/{car_id}/commands/{command_id}/cancel",
             tg_id=requested_by,
         )
 

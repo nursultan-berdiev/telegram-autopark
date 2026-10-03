@@ -128,6 +128,68 @@ async def test_alerts_listing_and_ack(client, session, admin_headers):
     assert acked.json()["status"] == "acknowledged"
 
 
+async def _moving_car(session):
+    car = Car(plate="01KG223AAA")
+    session.add(car)
+    await session.flush()
+    tracker = Tracker(
+        car_id=car.id, provider=TrackerProvider.traccar, external_id="9175358042"
+    )
+    session.add(tracker)
+    await session.flush()
+    session.add(
+        CarState(
+            car_id=car.id,
+            tracker_id=tracker.id,
+            last_ts=datetime.now(timezone.utc),
+            speed_knots=20.0,
+            ignition=True,
+            motion=True,
+        )
+    )
+    await session.commit()
+    return car.id
+
+
+async def test_cancel_armed_requires_admin_and_works(client, session, admin_headers):
+    car_id = await _moving_car(session)
+    # Взводим блокировку (машина едет) — на реле ничего не ушло.
+    command, ok, _ = await commands_domain.request_command(
+        session, car_id=car_id, type_value="engine_block", requested_by=111,
+        arm_if_unsafe=True,
+    )
+    await session.commit()
+    assert ok is False and command.status.value == "armed"
+
+    denied = await client.post(
+        f"/cars/{car_id}/commands/{command.id}/cancel",
+        headers={"X-TG-User-Id": "999"},
+    )
+    assert denied.status_code == 403
+
+    cancelled = await client.post(
+        f"/cars/{car_id}/commands/{command.id}/cancel", headers=admin_headers
+    )
+    assert cancelled.status_code == 200
+    assert cancelled.json()["ok"] is True
+    assert cancelled.json()["command"]["status"] == "failed"
+
+    # Повторная отмена — уже не в ожидании (200, ok=False).
+    again = await client.post(
+        f"/cars/{car_id}/commands/{command.id}/cancel", headers=admin_headers
+    )
+    assert again.status_code == 200
+    assert again.json()["ok"] is False
+
+
+async def test_cancel_missing_command_is_404(client, session, admin_headers):
+    car_id = await _parked_car(session)
+    resp = await client.post(
+        f"/cars/{car_id}/commands/99999/cancel", headers=admin_headers
+    )
+    assert resp.status_code == 404
+
+
 async def test_rules_crud_is_admin_only(client, session, admin_headers):
     payload = {"type": "overdue_payment", "params": {"min_days": 1}}
 

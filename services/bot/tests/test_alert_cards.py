@@ -45,6 +45,15 @@ def test_odometer_alert_offers_maintenance():
     assert "ТО выполнено" in labels
 
 
+def test_armed_block_fired_offers_unblock():
+    """Взвод сработал — двигатель заглушён; предлагаем разблокировать, не блокировать."""
+    labels = _labels(_alert("armed_block_fired"))
+
+    assert "Разблокировать двигатель" in labels
+    assert "Понятно" in labels
+    assert "Заблокировать двигатель" not in labels
+
+
 def test_unknown_type_is_informational_only():
     labels = _labels(_alert("что-то новое"))
 

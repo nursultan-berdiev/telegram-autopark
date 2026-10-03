@@ -47,6 +47,18 @@ class AlertCB(CallbackData, prefix="alr"):
     car_id: int = 0
 
 
+class ArmCB(CallbackData, prefix="arm"):
+    """Взведённая (ожидающая) блокировка: отмена ожидания.
+
+    Отдельно от AlertCB, чтобы не менять формат пака её кнопок. Несёт id самой
+    команды (`cmd_id`), т.к. отменяем конкретную ожидающую команду.
+    """
+
+    action: str  # cancel
+    car_id: int = 0
+    cmd_id: int = 0
+
+
 class FineCB(CallbackData, prefix="fine"):
     """Штрафы: карточка, страницы списка, отметка об оплате.
 

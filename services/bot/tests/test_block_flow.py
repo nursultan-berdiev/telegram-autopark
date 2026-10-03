@@ -95,6 +95,41 @@ async def test_gate_refusal_is_explained_and_driver_not_notified(callback):
     assert callback.bot.sent == [], "машину не заблокировали — водителю писать не о чем"
 
 
+async def test_block_arms_when_car_is_moving(callback):
+    """Машина едет → блокировка взводится, водителя пока НЕ уведомляем."""
+    api = _api_with_driver(
+        command={
+            "ok": False,
+            "command": {"id": 99, "status": "armed"},
+            "reason": "машина в движении",
+        }
+    )
+
+    await alerts_handlers.block_engine(
+        callback, AlertCB(action="block", alert_id=0, car_id=3), api
+    )
+
+    assert api.called("command")[0][1]["arm_if_unsafe"] is True
+    assert any("взведена" in a.lower() for a in callback.message.answers)
+    assert callback.bot.sent == [], "при взводе водителю ещё не о чем сообщать"
+
+
+async def test_cancel_armed_block_calls_api(callback):
+    from app.callbacks import ArmCB
+
+    api = _api_with_driver(
+        cancel_command={"ok": True, "command": {"id": 99, "status": "failed"}}
+    )
+
+    await alerts_handlers.cancel_armed_block(
+        callback, ArmCB(action="cancel", car_id=3, cmd_id=99), api
+    )
+
+    assert api.called("cancel_command")[0][0] == (3, 99)
+    assert callback.message.markup_cleared
+    assert any("отмен" in a.lower() for a in callback.message.answers)
+
+
 async def test_block_ask_shows_confirmation(callback):
     """С карточки машины блокировка идёт через подтверждение — не сразу командой."""
     api = _api_with_driver()
@@ -104,7 +139,7 @@ async def test_block_ask_shows_confirmation(callback):
     )
 
     assert api.called("command") == [], "до подтверждения команду не шлём"
-    assert any("Точно заблокировать" in a for a in callback.message.answers)
+    assert any("Заблокировать двигатель" in a for a in callback.message.answers)
     assert any("01KG777AAA" in a for a in callback.message.answers)
 
 

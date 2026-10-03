@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.callbacks import AlertCB, FleetCB
+from app.callbacks import AlertCB, ArmCB, FleetCB
 from app.handlers import fleet
 from tests.conftest import ADMIN_ID, FakeApi
 
@@ -178,6 +178,32 @@ async def test_blocked_car_offers_unblock_button():
     markup = fleet.state_keyboard(3, api.responses["car_state"])
     labels = [b.text for row in markup.inline_keyboard for b in row]
     assert labels == ["Разблокировать двигатель"]
+
+
+async def test_armed_car_offers_cancel_button():
+    """Взведённую блокировку можно снять прямо с карточки машины."""
+    markup = fleet.state_keyboard(3, {"engine_blocked": False}, armed_cmd_id=99)
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [b.text for b in buttons] == ["Отменить ожидание блокировки"]
+    cb = ArmCB.unpack(buttons[0].callback_data)
+    assert cb.action == "cancel" and cb.car_id == 3 and cb.cmd_id == 99
+
+
+async def test_show_state_flags_armed_block():
+    api = FakeApi(
+        car_state={
+            "last_ts": "2026-09-02T00:00:00+00:00",
+            "online": True,
+            "last_point_age_seconds": 10,
+            "engine_blocked": False,
+        },
+        commands=[{"id": 99, "type": "engine_stop", "status": "armed"}],
+    )
+    callback = FakeCallback()
+
+    await fleet.show_state(callback, FleetCB(action="state", car_id=3), api)
+
+    assert any("взведена" in a.lower() for a in callback.message.answers)
 
 
 async def test_free_car_offers_block_button():

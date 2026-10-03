@@ -10,6 +10,9 @@ class CommandRequest(DTO):
     type: str  # engine_block | engine_unblock | alarm_arm | alarm_disarm
     requested_by: int | None = None
     alert_id: int | None = None
+    # Блокировку заедущей/офлайн машины не отклонять, а взвести — заглушить,
+    # как только машина встанет (статус команды станет `armed`).
+    arm_if_unsafe: bool = False
 
 
 class CommandDTO(DTO):
