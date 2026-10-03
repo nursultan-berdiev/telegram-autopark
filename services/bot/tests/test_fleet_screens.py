@@ -2,7 +2,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from app.callbacks import FleetCB
+from app.callbacks import AlertCB, FleetCB
 from app.handlers import fleet
 from tests.conftest import ADMIN_ID, FakeApi
 
@@ -180,5 +180,12 @@ async def test_blocked_car_offers_unblock_button():
     assert labels == ["Разблокировать двигатель"]
 
 
-async def test_free_car_has_no_unblock_button():
-    assert fleet.state_keyboard(3, {"engine_blocked": False}) is None
+async def test_free_car_offers_block_button():
+    """Незаблокированную машину можно заглушить по требованию, без алерта."""
+    markup = fleet.state_keyboard(3, {"engine_blocked": False})
+    buttons = [b for row in markup.inline_keyboard for b in row]
+    assert [b.text for b in buttons] == ["⛔ Заблокировать двигатель"]
+    # Кнопка ведёт на подтверждение, а не напрямую в блокировку.
+    cb = AlertCB.unpack(buttons[0].callback_data)
+    assert cb.action == "block_ask"
+    assert cb.car_id == 3

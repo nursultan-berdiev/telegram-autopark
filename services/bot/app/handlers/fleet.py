@@ -58,15 +58,25 @@ def state_text(state: dict) -> str:
     return "\n".join(lines)
 
 
-def state_keyboard(car_id: int, state: dict) -> InlineKeyboardMarkup | None:
-    """Заблокированную машину должно быть чем разблокировать прямо отсюда."""
-    if not state.get("engine_blocked"):
-        return None
+def state_keyboard(car_id: int, state: dict) -> InlineKeyboardMarkup:
+    """Переключатель прямо из карточки: заглушить по требованию или вернуть.
+
+    Блокировку выводим всегда (не только по алерту) — угон, невозврат, ДТП не
+    завязаны на правила. Фактическую безопасность держит гейт в core-api:
+    едущую/офлайн-машину он не заглушит, даже если кнопку нажали.
+    """
     builder = InlineKeyboardBuilder()
-    builder.button(
-        text="Разблокировать двигатель",
-        callback_data=AlertCB(action="unblock", alert_id=0, car_id=car_id),
-    )
+    if state.get("engine_blocked"):
+        builder.button(
+            text="Разблокировать двигатель",
+            callback_data=AlertCB(action="unblock", alert_id=0, car_id=car_id),
+        )
+    else:
+        # Не напрямую в блокировку — через подтверждение (action="block_ask").
+        builder.button(
+            text="⛔ Заблокировать двигатель",
+            callback_data=AlertCB(action="block_ask", alert_id=0, car_id=car_id),
+        )
     return builder.as_markup()
 
 

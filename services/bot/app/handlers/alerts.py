@@ -102,6 +102,49 @@ async def block_engine(
     await callback.answer()
 
 
+@router.callback_query(AlertCB.filter(F.action == "block_ask"), IsAdmin)
+async def block_ask(
+    callback: CallbackQuery, callback_data: AlertCB, api: ApiClient
+) -> None:
+    """Подтверждение перед ручной блокировкой с карточки машины (без алерта).
+
+    Блокировка с карточки машины — «холодное» действие без повода-алерта,
+    поэтому спрашиваем лишний раз. Сама команда уходит из block_engine по
+    кнопке «Да» (action="block", alert_id=0 → блок без привязки к алерту).
+    """
+    try:
+        car = await api.car(callback_data.car_id)
+    except ApiError as exc:
+        await callback.answer(exc.human, show_alert=True)
+        return
+
+    plate = car.get("plate") or f"#{callback_data.car_id}"
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="✅ Да, заблокировать",
+        callback_data=AlertCB(action="block", alert_id=0, car_id=callback_data.car_id),
+    )
+    builder.button(
+        text="❌ Отмена",
+        callback_data=AlertCB(action="cancel", alert_id=0, car_id=callback_data.car_id),
+    )
+    builder.adjust(1)
+    await callback.message.answer(
+        f"Точно заблокировать двигатель {plate}? Команда уйдёт, только если "
+        "машина стоит с выключенным зажиганием.",
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(AlertCB.filter(F.action == "cancel"), IsAdmin)
+async def cancel_action(
+    callback: CallbackQuery, callback_data: AlertCB
+) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.answer("Отменено")
+
+
 @router.callback_query(AlertCB.filter(F.action == "unblock"), IsAdmin)
 async def unblock_engine(
     callback: CallbackQuery, callback_data: AlertCB, api: ApiClient
