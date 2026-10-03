@@ -95,6 +95,43 @@ async def test_gate_refusal_is_explained_and_driver_not_notified(callback):
     assert callback.bot.sent == [], "машину не заблокировали — водителю писать не о чем"
 
 
+async def test_block_ask_shows_confirmation(callback):
+    """С карточки машины блокировка идёт через подтверждение — не сразу командой."""
+    api = _api_with_driver()
+
+    await alerts_handlers.block_ask(
+        callback, AlertCB(action="block_ask", alert_id=0, car_id=3), api
+    )
+
+    assert api.called("command") == [], "до подтверждения команду не шлём"
+    assert any("Точно заблокировать" in a for a in callback.message.answers)
+    assert any("01KG777AAA" in a for a in callback.message.answers)
+
+
+async def test_block_without_alert_sends_command(callback):
+    """Подтверждение шлёт тот же block_engine, но alert_id=0 → блок без алерта."""
+    api = _api_with_driver(
+        command={"ok": True, "command": {"status": "sent"}, "reason": None}
+    )
+
+    await alerts_handlers.block_engine(
+        callback, AlertCB(action="block", alert_id=0, car_id=3), api
+    )
+
+    payload = api.called("command")[0][1]
+    assert payload["type"] == "engine_block"
+    assert payload["alert_id"] is None, "0 → None: команда не привязана к алерту"
+
+
+async def test_cancel_clears_markup(callback):
+    await alerts_handlers.cancel_action(
+        callback, AlertCB(action="cancel", alert_id=0, car_id=3)
+    )
+
+    assert callback.message.markup_cleared
+    assert callback.answered
+
+
 async def test_unblock_notifies_driver(callback):
     api = _api_with_driver(command={"ok": True, "command": {"status": "sent"}})
 

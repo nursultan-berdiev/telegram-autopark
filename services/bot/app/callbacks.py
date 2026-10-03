@@ -42,7 +42,7 @@ class ReportCB(CallbackData, prefix="rep"):
 class AlertCB(CallbackData, prefix="alr"):
     """Действия по карточке алерта. Набор кнопок зависит от типа (plan/05)."""
 
-    action: str  # block | unblock | retry | ack | maint_done
+    action: str  # block | block_ask | cancel | unblock | retry | ack | maint_done
     alert_id: int = 0
     car_id: int = 0
 
