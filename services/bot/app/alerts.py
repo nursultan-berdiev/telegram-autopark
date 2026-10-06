@@ -25,9 +25,6 @@ DRIVER_NOTIFY_TYPES = {"armed_block_fired"}
 
 _SEVERITY_MARK = {"info": "•", "warning": "!", "critical": "!!"}
 
-# Какие алерты уже показали — чтобы не слать одно и то же каждые полторы минуты.
-_delivered: set[int] = set()
-
 
 def alert_text(alert: dict) -> str:
     mark = _SEVERITY_MARK.get(alert.get("severity", "warning"), "!")
@@ -148,20 +145,21 @@ async def new_fine_card(alert: dict, api: ApiClient) -> tuple[str, InlineKeyboar
 
 
 async def poll_alerts(bot: Bot, api: ApiClient) -> int:
-    """Показывает админам новые открытые алерты. Возвращает число доставленных."""
+    """Доставляет админам ещё не отправленные алерты — ровно один раз.
+
+    Факт доставки хранит core-api (`notified_at`), а не память бота: поэтому
+    после перезапуска уже показанные алерты НЕ рассылаются повторно (пугающие
+    дубли «двигатель заблокирован»), и жать «Понятно» для этого не нужно.
+    """
     try:
-        alerts = await api.alerts(status="open")
+        alerts = await api.pending_alerts()
     except ApiError as exc:
         log.debug("опрос алертов: %s", exc)
         return 0
 
     delivered = 0
-    open_ids = set()
     for alert in alerts:
         alert_id = int(alert["id"])
-        open_ids.add(alert_id)
-        if alert_id in _delivered:
-            continue
         if alert.get("type") == "new_fine":
             text, markup = await new_fine_card(alert, api)
         else:
@@ -173,17 +171,25 @@ async def poll_alerts(bot: Bot, api: ApiClient) -> int:
                 shown += 1
             except Exception as e:  # noqa: BLE001 — один админ не должен ронять рассылку
                 log.warning("не удалось показать алерт %s админу %s: %s", alert_id, admin_id, e)
-        delivered += shown
-        if shown:
-            _delivered.add(alert_id)
-            # Авто-сработавшая блокировка — водитель узнаёт в момент срабатывания.
-            if alert.get("type") in DRIVER_NOTIFY_TYPES:
-                await notify_driver(bot, api, int(alert["car_id"]), DRIVER_BLOCKED_TEXT)
-        else:
-            # Ни одному админу не дошло — помечать доставленным нельзя, иначе
-            # алерт исчезнет навсегда: следующий проход его пропустит.
-            log.error("алерт %s не дошёл ни до кого — повторим на следующем проходе", alert_id)
 
-    # Закрытые алерты можно показать снова, если они откроются заново.
-    _delivered.intersection_update(open_ids)
+        if not shown:
+            # Ни одному админу не дошло — не помечаем доставленным, повторим на
+            # следующем проходе (лучше показать позже, чем потерять).
+            log.error("алерт %s не дошёл ни до кого — повторим на следующем проходе", alert_id)
+            continue
+
+        # Фиксируем доставку на сервере. Если отметить не удалось — НЕ уведомляем
+        # водителя и не считаем доставленным: алерт вернётся в pending и уйдёт на
+        # следующем проходе. Иначе водитель получал бы «двигатель заблокирован» на
+        # каждом проходе, пока отметка не пройдёт (админам редкий повтор допустим).
+        try:
+            await api.mark_alert_notified(alert_id)
+        except ApiError as exc:
+            log.error("не удалось отметить алерт %s доставленным: %s", alert_id, exc)
+            continue
+        delivered += shown
+        # Авто-сработавшая блокировка — водитель узнаёт в момент срабатывания.
+        if alert.get("type") in DRIVER_NOTIFY_TYPES:
+            await notify_driver(bot, api, int(alert["car_id"]), DRIVER_BLOCKED_TEXT)
+
     return delivered

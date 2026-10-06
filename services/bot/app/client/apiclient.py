@@ -356,6 +356,15 @@ class ApiClient:
     async def alerts(self, status: str = "open") -> list[dict]:
         return await self._request("GET", "/alerts", params={"status": status})
 
+    async def pending_alerts(self) -> list[dict]:
+        """Открытые алерты, которые ещё не доставляли (notified_at IS NULL)."""
+        return await self._request(
+            "GET", "/alerts", params={"status": "open", "pending": "true"}
+        )
+
+    async def mark_alert_notified(self, alert_id: int) -> dict:
+        return await self._request("POST", f"/alerts/{alert_id}/notified")
+
     async def ack_alert(self, alert_id: int) -> dict:
         return await self._request("POST", f"/alerts/{alert_id}/ack")
 

@@ -128,6 +128,61 @@ async def test_alerts_listing_and_ack(client, session, admin_headers):
     assert acked.json()["status"] == "acknowledged"
 
 
+async def test_alerts_pending_and_mark_notified(client, session):
+    """pending отдаёт только недоставленные; notified помечает, не закрывая алерт."""
+    from app.db.models import AlertType
+    from app.domain import alerts as alerts_domain
+
+    car_id = await _parked_car(session)
+    a1 = await alerts_domain.raise_alert(
+        session, car_id=car_id, atype=AlertType.command_unconfirmed,
+        payload={"command_id": 1}, text="t1",
+    )
+    a2 = await alerts_domain.raise_alert(
+        session, car_id=car_id, atype=AlertType.armed_block_fired, payload={}, text="t2",
+    )
+    await session.commit()
+    id1, id2 = a1.id, a2.id
+
+    pending = await client.get("/alerts", params={"status": "open", "pending": "true"})
+    assert {a["id"] for a in pending.json()} == {id1, id2}
+
+    marked = await client.post(f"/alerts/{id1}/notified")
+    assert marked.status_code == 200
+    assert marked.json()["status"] == "open", "доставка не закрывает алерт"
+
+    pending2 = await client.get("/alerts", params={"status": "open", "pending": "true"})
+    assert {a["id"] for a in pending2.json()} == {id2}, "доставленный ушёл из pending"
+
+    all_open = await client.get("/alerts", params={"status": "open"})
+    assert {a["id"] for a in all_open.json()} == {id1, id2}, "в обычном списке оба"
+
+    assert (await client.post("/alerts/999999/notified")).status_code == 404
+
+
+async def test_mark_notified_is_idempotent(session):
+    """Повторная отметка (ретрай бота) не сдвигает метку первой доставки."""
+    from datetime import timedelta
+
+    from app.db.models import AlertType
+    from app.domain import alerts as alerts_domain
+
+    car_id = await _parked_car(session)
+    alert = await alerts_domain.raise_alert(
+        session, car_id=car_id, atype=AlertType.armed_block_fired, payload={}, text="t",
+    )
+    await session.commit()
+
+    await alerts_domain.mark_notified(session, alert)
+    await session.commit()
+    first = alert.notified_at
+    assert first is not None
+
+    await alerts_domain.mark_notified(session, alert, now=first + timedelta(hours=1))
+    await session.commit()
+    assert alert.notified_at == first, "повторная отметка не должна сдвигать метку"
+
+
 async def _moving_car(session):
     car = Car(plate="01KG223AAA")
     session.add(car)

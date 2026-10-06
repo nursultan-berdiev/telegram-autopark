@@ -503,6 +503,11 @@ class Alert(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Момент доставки админам. Хранится на сервере, а не в памяти бота, чтобы
+    # уведомление ушло ровно один раз и не повторялось после перезапуска бота.
+    notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
     action_taken: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
