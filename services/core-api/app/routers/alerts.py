@@ -38,10 +38,14 @@ async def _to_dto(session: AsyncSession, alert: Alert) -> AlertDTO:
 async def list_alerts(
     status: str | None = "open",
     car_id: int | None = None,
+    pending: bool = False,
     session: AsyncSession = Depends(get_session),
     _: str = Depends(require_core),
 ) -> list[AlertDTO]:
-    alerts = await alerts_domain.list_alerts(session, status=status, car_id=car_id)
+    """`pending=true` — только ещё не доставленные боту (notified_at IS NULL)."""
+    alerts = await alerts_domain.list_alerts(
+        session, status=status, car_id=car_id, only_unnotified=pending
+    )
     return [await _to_dto(session, alert) for alert in alerts]
 
 
@@ -72,6 +76,25 @@ async def ack_alert(
     if alert is None:
         raise NotFound("алерт не найден")
     await alerts_domain.set_status(session, alert, AlertStatus.acknowledged)
+    await session.commit()
+    return await _to_dto(session, alert)
+
+
+@router.post("/{alert_id}/notified", response_model=AlertDTO)
+async def mark_notified(
+    alert_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> AlertDTO:
+    """Бот зовёт это после успешной доставки: больше слать не нужно.
+
+    Статус алерта не меняем (остаётся open — чтобы дедуп raise_alert по
+    открытому работал), помечаем только факт доставки.
+    """
+    alert = await session.get(Alert, alert_id)
+    if alert is None:
+        raise NotFound("алерт не найден")
+    await alerts_domain.mark_notified(session, alert)
     await session.commit()
     return await _to_dto(session, alert)
 

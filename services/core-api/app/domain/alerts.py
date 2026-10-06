@@ -101,7 +101,11 @@ async def get_alert(session: AsyncSession, alert_id: int) -> Alert | None:
 
 
 async def list_alerts(
-    session: AsyncSession, *, status: str | None = "open", car_id: int | None = None
+    session: AsyncSession,
+    *,
+    status: str | None = "open",
+    car_id: int | None = None,
+    only_unnotified: bool = False,
 ) -> list[Alert]:
     query = select(Alert)
     if status:
@@ -111,7 +115,26 @@ async def list_alerts(
             raise DomainError(f"неизвестный статус алерта: {status}", status_code=422) from exc
     if car_id is not None:
         query = query.where(Alert.car_id == car_id)
+    if only_unnotified:
+        # Ещё не доставленные боту: порядок по времени срабатывания — старые первыми.
+        query = query.where(Alert.notified_at.is_(None))
+        return list(await session.scalars(query.order_by(Alert.triggered_at)))
     return list(await session.scalars(query.order_by(Alert.triggered_at.desc())))
+
+
+async def mark_notified(
+    session: AsyncSession, alert: Alert, now: datetime | None = None
+) -> Alert:
+    """Фиксирует первую доставку алерта админам — повторно слать не нужно.
+
+    Идемпотентно: повторный вызов (ретрай бота) НЕ сдвигает метку первой
+    доставки. Рассчитано на ОДИН инстанс бота; для нескольких реплик понадобился
+    бы условный `UPDATE ... WHERE notified_at IS NULL`.
+    """
+    if alert.notified_at is None:
+        alert.notified_at = now or datetime.now(timezone.utc)
+        await session.flush()
+    return alert
 
 
 async def set_status(
