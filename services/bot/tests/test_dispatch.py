@@ -132,6 +132,46 @@ async def test_start_guest_gets_refusal(dispatcher, shared_api, bot_with_fake_se
     assert "нет доступа" in texts[0].lower()
 
 
+async def test_me_returns_id_and_role_for_admin(dispatcher, shared_api, bot_with_fake_session):
+    """/me отдаёт ID и роль, без меню (не проваливается в приветствие /start)."""
+    shared_api.set("me", ADMIN_ME)
+
+    texts = await _feed(
+        dispatcher, bot_with_fake_session, _message(ADMIN_ID, "/me"), shared_api
+    )
+
+    assert texts, "хендлер /me не ответил"
+    assert str(ADMIN_ID) in texts[0]
+    assert "администратор" in texts[0].lower()
+    assert "добро пожаловать" not in texts[0].lower(), "это /me, а не меню /start"
+
+
+async def test_me_returns_role_for_driver(dispatcher, shared_api, bot_with_fake_session):
+    shared_api.set("me", DRIVER_ME)
+
+    texts = await _feed(
+        dispatcher, bot_with_fake_session, _message(DRIVER_ID, "/me"), shared_api
+    )
+
+    assert texts, "хендлер /me не ответил"
+    assert str(DRIVER_ID) in texts[0]
+    assert "водитель" in texts[0].lower()
+
+
+async def test_me_works_for_guest(dispatcher, shared_api, bot_with_fake_session):
+    """Гостю /me тоже отвечает — именно так ловят Telegram ID для доступа."""
+    shared_api.set("me", GUEST_ME)
+
+    texts = await _feed(
+        dispatcher, bot_with_fake_session, _message(GUEST_ID, "/me"), shared_api
+    )
+
+    assert texts, "хендлер /me не ответил"
+    assert str(GUEST_ID) in texts[0]
+    assert "гость" in texts[0].lower()
+    assert "нет доступа" not in texts[0].lower(), "это /me, а не отказ /start"
+
+
 async def test_guest_with_valid_invite_link_gets_registration_step(
     dispatcher, shared_api, bot_with_fake_session
 ):

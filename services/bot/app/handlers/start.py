@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from app.keyboards.admin import admin_menu
@@ -51,3 +51,15 @@ async def start(message: Message, role: Role, driver: dict | None) -> None:
             "У вас нет доступа к этому боту. "
             "Обратитесь к владельцу автопарка за приглашением."
         )
+
+
+_ROLE_LABEL = {Role.admin: "администратор", Role.driver: "водитель", Role.guest: "гость"}
+
+
+@router.message(Command("me"))
+async def whoami(message: Message, role: Role) -> None:
+    """Только ID и роль, без меню. Нужно, чтобы быстро взять свой Telegram ID
+    (например, для добавления в ADMIN_IDS) и увидеть, кем бот считает человека."""
+    await message.answer(
+        f"Ваш ID: {message.from_user.id}\nРоль: {_ROLE_LABEL.get(role, role.value)}"
+    )
