@@ -3,7 +3,7 @@
 Часто (каждые ~2 мин, interval в строке periodic_tasks) снимает СИСТЕМНУЮ
 блокировку с машин, чьи водители закрыли долг: оплативший не должен стоять до
 прихода админа. Ручной блок админа не трогается. Политика — в
-`app.domain.overdue_enforcement`; здесь только обёртка задачи.
+`app.domain.engine_enforcement`; здесь только обёртка задачи.
 
 Отдельная задача от `block_overdue`: выключается независимо (как просил заказчик),
 оставив авто-блокировку работать.
@@ -14,8 +14,8 @@ import logging
 from collections import Counter
 from datetime import datetime, timezone
 
-from app.db.models import TaskRunStatus
-from app.domain import overdue_enforcement as enforcement
+from app.db.models import CommandSource, TaskRunStatus
+from app.domain import engine_enforcement as enforcement
 from app.tasks.asyncio_bridge import run_async, session_scope
 from app.tasks.celery_app import celery_app
 from app.tasks.runlog import record_run
@@ -35,7 +35,7 @@ async def _run() -> dict[str, int]:
     now = datetime.now(timezone.utc)
     outcomes: Counter[str] = Counter()
     async with session_scope() as session:
-        car_ids = await enforcement.cars_under_system_block(session)
+        car_ids = await enforcement.cars_under_system_block(session, CommandSource.overdue)
         for car_id in car_ids:
             try:
                 outcome = await enforcement.release_if_paid(

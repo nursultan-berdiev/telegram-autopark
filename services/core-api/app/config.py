@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     fines_close_max_per_run: int = Field(
         default=25, alias="FINES_CLOSE_MAX_PER_RUN"
     )
+    # Порог авто-блокировки по штрафам: блокируем при СТРОГО большем числе
+    # неоплаченных. Дефолт; оперативное значение — в args задачи enforce_fines.
+    fines_block_threshold: int = Field(default=5, alias="FINES_BLOCK_THRESHOLD")
 
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")
