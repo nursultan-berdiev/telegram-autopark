@@ -3,12 +3,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Payment, PaymentStatus
+from app.db.models import Car, Driver, Payment, PaymentStatus
 from app.clients.ai_gateway import RecognizedReceipt
 
 
@@ -78,3 +78,29 @@ async def list_payments_by_driver(
         .order_by(Payment.created_at.desc())
     )
     return list(result.all())
+
+
+async def list_recent(
+    session: AsyncSession, *, hours: int = 24, limit: int = 50
+) -> list[tuple[Payment, str | None, str | None]]:
+    """Последние оплаты по всему парку: (платёж, номер машины, имя водителя).
+
+    Для ИИ-ассистента («кто оплатил сегодня/за сутки»): по парку, с лимитом —
+    в домене до этого был только помощник по одному водителю. `hours` ограничиваем
+    (вход может прийти от LLM): иначе отрицательное/огромное значение даёт пустую
+    выдачу или OverflowError в timedelta.
+    """
+    try:
+        hours = max(1, min(int(hours), 720))
+    except (TypeError, ValueError):
+        hours = 24
+    since = datetime.now(timezone.utc) - timedelta(hours=hours)
+    rows = await session.execute(
+        select(Payment, Car.plate, Driver.full_name)
+        .join(Car, Car.id == Payment.car_id, isouter=True)
+        .join(Driver, Driver.id == Payment.driver_id, isouter=True)
+        .where(Payment.created_at >= since)
+        .order_by(Payment.created_at.desc())
+        .limit(limit)
+    )
+    return [(payment, plate, name) for payment, plate, name in rows.all()]

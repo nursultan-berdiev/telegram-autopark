@@ -51,6 +51,9 @@ services:
       GATEWAY_URL: http://claude_gw_api:8080
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
       GATEWAY_MODEL: ${GATEWAY_MODEL:-sonnet}
+      # ИИ-ассистент на инструментах: gateway (на claude_net) ходит в наш MCP.
+      MCP_URL: ${MCP_URL:-http://fleet_core_api:8000/mcp/}
+      MCP_TOKEN: ${MCP_TOKEN:-}
       ADAPTER_URL: http://tracker-adapter:8001
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     ports:

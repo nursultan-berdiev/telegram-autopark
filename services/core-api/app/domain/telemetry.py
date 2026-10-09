@@ -38,6 +38,12 @@ async def get_state(session: AsyncSession, car_id: int) -> CarState | None:
     return await session.get(CarState, car_id)
 
 
+async def list_states(session: AsyncSession) -> dict[int, CarState]:
+    """Снимки состояния всех машин разом (для ИИ-ассистента: онлайн-карта парка)."""
+    rows = await session.scalars(select(CarState))
+    return {state.car_id: state for state in rows}
+
+
 def is_online(state: CarState | None, now: datetime | None = None) -> bool:
     """Онлайн — это свежесть последней точки, а не хранимый флаг."""
     if state is None or state.last_ts is None:

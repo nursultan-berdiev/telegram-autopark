@@ -36,6 +36,11 @@ from app.routers import (
 
 logger = logging.getLogger("core-api")
 
+# MCP-сервер ассистента подключаем ЛЕНИВО (ниже) — только когда фича включена и
+# задан токен. Иначе core-api не зависит от пакета mcp, а ASSISTANT_USE_TOOLS=0 —
+# настоящий откат (при несовместимости mcp сервис всё равно стартует).
+_fleet_mcp = None
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -43,7 +48,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     scheduler = start_jobs()
     logger.info("core-api запущен (TZ=%s)", settings.timezone)
     try:
-        yield
+        if _fleet_mcp is not None:
+            # streamable-HTTP MCP нужен запущенный менеджер сессий.
+            async with _fleet_mcp.session_manager.run():
+                yield
+        else:
+            yield
     finally:
         scheduler.shutdown(wait=False)
 
@@ -87,3 +97,12 @@ app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
 app.include_router(periodic.router, tags=["periodic"])
 app.include_router(admin.router, tags=["admin"])
+
+# MCP-сервер ИИ-ассистента (read-only). Монтируем только при включённой фиче и
+# заданном токене; /mcp закрыт bearer-токеном (чистая ASGI-обёртка, fail-closed).
+if settings.assistant_use_tools and settings.mcp_token:
+    from app.assistant.auth import MCPAuth
+    from app.assistant.mcp_server import mcp as _fleet_mcp
+    from app.assistant.mcp_server import mcp_app as _fleet_mcp_app
+
+    app.mount("/mcp", MCPAuth(_fleet_mcp_app, settings.mcp_token))

@@ -28,6 +28,12 @@ async def find_id_by_plate(session: AsyncSession, plate: str) -> int | None:
     return await session.scalar(select(Car.id).where(Car.plate == plate))
 
 
+async def plate_map(session: AsyncSession) -> dict[int, str]:
+    """car_id → номер по всему парку (для разметки отчётов/ответов ассистента)."""
+    rows = await session.execute(select(Car.id, Car.plate))
+    return {car_id: plate for car_id, plate in rows.all()}
+
+
 async def get_car(session: AsyncSession, car_id: int) -> Car | None:
     return await session.get(Car, car_id)
 
