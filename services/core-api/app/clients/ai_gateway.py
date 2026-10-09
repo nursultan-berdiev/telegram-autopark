@@ -24,6 +24,7 @@ import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from anthropic import AsyncAnthropic
@@ -97,6 +98,22 @@ _OWNER_SYSTEM = (
     "опираясь ТОЛЬКО на приведённые данные автопарка. Если данных для ответа "
     "недостаточно, честно скажи об этом. Не выдумывай цифры."
 )
+
+
+def _owner_tools_system() -> str:
+    """Системный промпт для режима инструментов: роль, набор tools, правила, дата."""
+    now = datetime.now(ZoneInfo(settings.timezone))
+    return (
+        "Ты — ассистент владельца автопарка. Отвечай кратко, по делу, на русском. "
+        f"Сейчас {now:%Y-%m-%d %H:%M} ({settings.timezone}). "
+        "У тебя есть инструменты MCP-сервера fleet — вызывай ТОЛЬКО нужные под вопрос: "
+        "fleet_overview (парк, кто за рулём, онлайн); payments_status (графики аренды, "
+        "долги, просрочка); recent_payments (кто оплатил за N часов); car_state (где "
+        "машина и её состояние — по номеру); fines (неоплаченные штрафы); open_alerts "
+        "(тревоги); blocked_cars (блокировки двигателя). Машины называются номером "
+        "(например, 01KG139API). Опирайся ТОЛЬКО на данные инструментов, не выдумывай "
+        "цифры. Если инструмент не вернул данных — честно так и скажи."
+    )
 
 
 # --------------------------------------------------------------------------
@@ -445,7 +462,51 @@ async def _recognize_receipt_http(
     return _parse_receipt(body.get("data") or {})
 
 
+def _tools_enabled() -> bool:
+    return bool(
+        settings.assistant_use_tools and settings.mcp_url and settings.mcp_token
+    )
+
+
+def _tools_payload(question: str) -> dict:
+    return {
+        "prompt": question,
+        "model": settings.gateway_model,
+        "system_prompt": _owner_tools_system(),
+        "mcp_servers": {
+            "mcpServers": {
+                "fleet": {
+                    "type": "http",
+                    "url": settings.mcp_url,
+                    "headers": {"Authorization": f"Bearer {settings.mcp_token}"},
+                }
+            }
+        },
+        "allowed_tools": ["mcp__fleet"],
+    }
+
+
+async def _answer_via_tools(question: str) -> str | None:
+    """ИИ сам дёргает MCP-сервер fleet под вопрос. None — пустой ответ (на фолбэк)."""
+    body = await _gateway_post("/v1/prompt", _tools_payload(question))
+    text = str(body.get("text") or "").strip()
+    if not text:
+        logger.warning("ассистент (инструменты): gateway вернул пустой ответ")
+        return None
+    return text
+
+
 async def _answer_owner_query_http(question: str, context_text: str) -> str:
+    # Режим инструментов: снимок в промпт не шлём. При сбое/пустом ответе —
+    # фолбэк на старый снимок-промпт (флаг ASSISTANT_USE_TOOLS — постоянный откат).
+    if _tools_enabled():
+        try:
+            text = await _answer_via_tools(question)
+            if text:
+                return text
+        except Exception:  # noqa: BLE001 — падать на фолбэк, а не ронять ответ
+            logger.warning("ассистент на инструментах упал — фолбэк на снимок", exc_info=True)
+
     body = await _gateway_post(
         "/v1/prompt",
         {

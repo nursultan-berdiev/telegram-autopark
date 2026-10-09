@@ -569,3 +569,37 @@ async def list_commands(session: AsyncSession, car_id: int) -> list[Command]:
             .order_by(Command.id.desc())
         )
     )
+
+
+# Действующая блокировка = ПОСЛЕДНЯЯ значимая команда блока/разблокировки машины,
+# и это engine_stop в активном статусе. Более поздний resume/отмена убирает машину
+# из списка — зависшая старая команда не считается действующим блоком.
+_BLOCK_OR_RESUME = (CommandType.engine_stop, CommandType.engine_resume)
+_INSIGNIFICANT = (CommandStatus.failed, CommandStatus.blocked_by_safety)
+_ACTIVE_BLOCK = (
+    CommandStatus.armed,
+    CommandStatus.queued,
+    CommandStatus.sent,
+    CommandStatus.acked,
+    CommandStatus.unconfirmed,
+)
+
+
+async def cars_under_block(session: AsyncSession) -> list[Command]:
+    """Машины с действующей блокировкой двигателя (любого источника) — по одной
+    команде на машину (последняя значимая engine_stop в активном статусе)."""
+    last_ids = (
+        select(Command.car_id, func.max(Command.id).label("mx"))
+        .where(Command.type.in_(_BLOCK_OR_RESUME), Command.status.notin_(_INSIGNIFICANT))
+        .group_by(Command.car_id)
+        .subquery()
+    )
+    rows = await session.scalars(
+        select(Command)
+        .join(last_ids, Command.id == last_ids.c.mx)
+        .where(
+            Command.type == CommandType.engine_stop,
+            Command.status.in_(_ACTIVE_BLOCK),
+        )
+    )
+    return list(rows)

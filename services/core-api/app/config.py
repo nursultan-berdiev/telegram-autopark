@@ -76,6 +76,12 @@ class Settings(BaseSettings):
     anthropic_model: str = Field(default="claude-opus-4-8", alias="ANTHROPIC_MODEL")
     claude_cli_path: str = Field(default="claude", alias="CLAUDE_CLI_PATH")
     claude_cli_model: str = Field(default="sonnet", alias="CLAUDE_CLI_MODEL")
+    # Ассистент на инструментах (MCP): ИИ дёргает нужные данные сам, а не читает
+    # весь снимок. mcp_url — как gateway (Claude CLI) достучится до нашего MCP;
+    # mcp_token — секрет для /mcp. Флаг — мгновенный откат на старый снимок.
+    assistant_use_tools: bool = Field(default=True, alias="ASSISTANT_USE_TOOLS")
+    mcp_url: str = Field(default="", alias="MCP_URL")
+    mcp_token: str = Field(default="", alias="MCP_TOKEN")
 
     files_dir: Path = Field(default=Path("./storage"), alias="FILES_DIR")
     timezone: str = Field(default="Asia/Bishkek", alias="TZ")
