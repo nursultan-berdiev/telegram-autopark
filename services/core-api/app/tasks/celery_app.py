@@ -19,6 +19,7 @@ celery_app = Celery(
         "app.tasks.fines_tolom",
         "app.tasks.payments_block",
         "app.tasks.payments_unblock",
+        "app.tasks.fines_enforcement",
     ],
 )
 

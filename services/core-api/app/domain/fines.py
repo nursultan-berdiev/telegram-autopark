@@ -532,3 +532,23 @@ async def count_unpaid(
     if start is not None:
         stmt = stmt.where(Fine.issued_at >= start)
     return int(await session.scalar(stmt) or 0)
+
+
+async def car_ids_over_unpaid(
+    session: AsyncSession, threshold: int, *, window_days: int | None = None
+) -> set[int]:
+    """car_id машин, у которых неоплаченных штрафов СТРОГО больше threshold.
+
+    Один запрос по парку (GROUP BY ... HAVING), чтобы задача авто-блокировки не
+    гоняла count_unpaid в цикле по всем машинам.
+    """
+    stmt = (
+        select(Fine.car_id)
+        .where(Fine.status == FineStatus.unpaid)
+        .group_by(Fine.car_id)
+        .having(func.count(Fine.id) > threshold)
+    )
+    start = _window_start(window_days)
+    if start is not None:
+        stmt = stmt.where(Fine.issued_at >= start)
+    return set(await session.scalars(stmt))

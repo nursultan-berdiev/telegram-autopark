@@ -34,6 +34,7 @@ KNOWN_TASKS = {
     "app.tasks.fines.check_fines": "Проверка штрафов по парку (carcheck.gov.kg, запасной)",
     "app.tasks.payments_block.block_overdue": "Блокировка двигателя неоплативших к сроку",
     "app.tasks.payments_unblock.unblock_paid": "Разблокировка двигателя после оплаты",
+    "app.tasks.fines_enforcement.enforce_fines": "Блокировка двигателя при превышении лимита штрафов",
     "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
 }
 

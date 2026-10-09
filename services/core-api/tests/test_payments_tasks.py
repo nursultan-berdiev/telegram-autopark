@@ -23,7 +23,7 @@ from app.db.models import (
 )
 from app.domain import commands as commands_domain
 from app.domain import drivers as drivers_service
-from app.domain import overdue_enforcement as enforcement
+from app.domain import engine_enforcement as enforcement
 from app.domain import schedules as sched
 from app.routers.admin import KNOWN_TASKS
 from app.tasks import payments_block, payments_unblock
@@ -170,7 +170,7 @@ async def test_unblock_run_isolates_per_car_errors(monkeypatch):
 
     monkeypatch.setattr(payments_unblock, "session_scope", lambda: _Scope())
 
-    async def _cars(sess):
+    async def _cars(sess, source):
         return [1, 2]
 
     monkeypatch.setattr(enforcement, "cars_under_system_block", _cars)

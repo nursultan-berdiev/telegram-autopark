@@ -4,7 +4,7 @@
 машинам просроченных водителей. Блок именно ВЗВОДИТСЯ (`always_arm`): едущая/офлайн
 машина не глохнет мгновенно, а заглохнет сама на первой безопасной остановке через
 `fire_armed`; тогда же придут уведомления админу и водителю. Политика — в
-`app.domain.overdue_enforcement`; здесь только обёртка задачи.
+`app.domain.engine_enforcement`; здесь только обёртка задачи.
 
 Задача включается/выключается независимо — своей строкой в `periodic_tasks`.
 """
@@ -17,7 +17,7 @@ from zoneinfo import ZoneInfo
 
 from app.config import settings
 from app.db.models import TaskRunStatus
-from app.domain import overdue_enforcement as enforcement
+from app.domain import engine_enforcement as enforcement
 from app.tasks.asyncio_bridge import run_async, session_scope
 from app.tasks.celery_app import celery_app
 from app.tasks.runlog import record_run

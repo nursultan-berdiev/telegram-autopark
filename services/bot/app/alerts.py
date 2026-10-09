@@ -17,6 +17,8 @@ from app.fines_view import esc
 from app.keyboards.fines import fines_page
 from app.notify import (
     DRIVER_BLOCKED_TEXT,
+    DRIVER_FINES_BLOCKED_TEXT,
+    DRIVER_FINES_UNBLOCKED_TEXT,
     DRIVER_OVERDUE_BLOCKED_TEXT,
     DRIVER_OVERDUE_UNBLOCKED_TEXT,
     notify_driver,
@@ -30,9 +32,11 @@ DRIVER_NOTIFY_TEXT = {
     "armed_block_fired": DRIVER_BLOCKED_TEXT,
     "overdue_block_fired": DRIVER_OVERDUE_BLOCKED_TEXT,
     "overdue_unblock": DRIVER_OVERDUE_UNBLOCKED_TEXT,
+    "fines_block_fired": DRIVER_FINES_BLOCKED_TEXT,
+    "fines_unblock": DRIVER_FINES_UNBLOCKED_TEXT,
 }
-# Карточки с кнопкой «Разблокировать»: авто-сработавший блок (ручной взвод и за неоплату).
-UNBLOCK_CARD_TYPES = {"armed_block_fired", "overdue_block_fired"}
+# Карточки с кнопкой «Разблокировать»: авто-сработавший блок (взвод, аренда, штрафы).
+UNBLOCK_CARD_TYPES = {"armed_block_fired", "overdue_block_fired", "fines_block_fired"}
 
 _SEVERITY_MARK = {"info": "•", "warning": "!", "critical": "!!"}
 

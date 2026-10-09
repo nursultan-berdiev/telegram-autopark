@@ -24,9 +24,9 @@ from app.db.models import (
 from app.domain import alerts as alerts_domain
 from app.domain import commands as commands_domain
 from app.domain import drivers as drivers_service
-from app.domain import overdue_enforcement as enforcement
+from app.domain import engine_enforcement as enforcement
 from app.domain import schedules as sched
-from app.domain.overdue_enforcement import BlockOutcome, ReleaseOutcome
+from app.domain.engine_enforcement import BlockOutcome, ReleaseOutcome
 
 # Фиксированная среда (2026-10-07, будний): воскресный сдвиг срока не мешает тесту.
 NOW = datetime(2026, 10, 7, 12, 0, tzinfo=timezone.utc)
@@ -201,7 +201,7 @@ async def test_release_skips_when_resume_already_sent(session, adapter_ok):
     assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.no_system_block
     assert adapter_ok == [], "второй resume не отправляли"
     assert "overdue_unblock" not in await _open_types(session)
-    assert car.id not in await enforcement.cars_under_system_block(session), "уже не кандидат"
+    assert car.id not in await enforcement.cars_under_system_block(session, CommandSource.overdue), "уже не кандидат"
 
 
 async def test_fire_armed_system_block_raises_overdue_alert(session, adapter_ok):
@@ -250,7 +250,7 @@ async def test_release_keeps_block_if_still_overdue(session, adapter_ok):
     await _driver(session, car.id, tg_user_id=1, overdue=True)
     await _system_block(session, car, tracker, status=CommandStatus.acked)
 
-    assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.still_overdue
+    assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.still_applies
     assert adapter_ok == []
 
 
@@ -259,7 +259,7 @@ async def test_release_keeps_block_when_no_driver(session, adapter_ok):
     car, tracker = await _car(session, engine_blocked=True)
     await _system_block(session, car, tracker, status=CommandStatus.acked)
 
-    assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.no_driver
+    assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.hold
     assert adapter_ok == []
 
 
@@ -284,7 +284,7 @@ async def test_release_ignores_system_block_revived_by_later_manual(session, ada
 
     assert await enforcement.release_if_paid(session, car_id=car.id, now=NOW) == ReleaseOutcome.no_system_block
     assert adapter_ok == [], "ручной блок админа не снимаем"
-    assert car.id not in await enforcement.cars_under_system_block(session)
+    assert car.id not in await enforcement.cars_under_system_block(session, CommandSource.overdue)
 
 
 async def test_release_disarms_paid_armed_block(session, adapter_ok):
@@ -411,7 +411,7 @@ async def test_cars_under_system_block_lists_candidates(session, adapter_ok):
     ))
     await session.commit()
 
-    ids = await enforcement.cars_under_system_block(session)
+    ids = await enforcement.cars_under_system_block(session, CommandSource.overdue)
     assert car1.id in ids, "взведённый системный — кандидат"
     assert car2.id not in ids, "ручной блок не кандидат"
     assert car3.id not in ids, "снятый resume блок не кандидат"
@@ -423,7 +423,7 @@ async def test_enforce_rechecks_overdue_under_lock(session, adapter_ok):
     car, _ = await _car(session)
     await _driver(session, car.id, tg_user_id=1, overdue=False)  # уже оплатил
 
-    assert await enforcement.enforce_overdue_block(session, car_id=car.id, now=NOW) == BlockOutcome.not_overdue
+    assert await enforcement.enforce_overdue_block(session, car_id=car.id, now=NOW) == BlockOutcome.not_applicable
     assert await session.scalar(select(Command).where(Command.car_id == car.id)) is None
 
 

@@ -418,6 +418,9 @@ class AlertType(str, enum.Enum):
     overdue_block_fired = "overdue_block_fired"  # авто-блокировка за неоплату сработала
     overdue_unblock = "overdue_unblock"  # оплата пришла — двигатель авто-разблокирован
     overdue_unblock_failed = "overdue_unblock_failed"  # авто-разблокировку не удалось отправить
+    fines_block_fired = "fines_block_fired"  # авто-блокировка за штрафы сработала
+    fines_unblock = "fines_unblock"  # штрафы погашены — двигатель авто-разблокирован
+    fines_unblock_failed = "fines_unblock_failed"  # авто-разблокировку (штрафы) не удалось отправить
 
 
 class AlertStatus(str, enum.Enum):
@@ -448,7 +451,8 @@ class CommandSource(str, enum.Enum):
     авто-разблокировка снимает ТОЛЬКО свой блок и не трогает ручной (угон)."""
 
     manual = "manual"  # админ
-    overdue = "overdue"  # авто-блокировка за неоплату
+    overdue = "overdue"  # авто-блокировка за неоплату аренды
+    fines = "fines"  # авто-блокировка за неоплаченные штрафы
 
 
 class Rule(Base):

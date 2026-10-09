@@ -181,7 +181,7 @@ async def request_command(
             .where(
                 Command.car_id == car_id,
                 Command.type == CommandType.engine_stop,
-                Command.source == CommandSource.overdue,
+                Command.source != CommandSource.manual,
                 Command.status.in_(
                     (
                         CommandStatus.armed,
@@ -500,12 +500,18 @@ async def fire_armed(
                     state.last_command = command.type.value
                 car = await session.get(Car, command.car_id)
                 plate = car.plate if car else str(command.car_id)
-                # Системный взвод (source=overdue) ставит планировщик за неоплату —
-                # у него свой тип алерта и платёжный текст водителю.
+                # Системный взвод ставит планировщик — у каждого источника свой тип
+                # алерта и свой текст водителю.
                 if command.source == CommandSource.overdue:
                     atype = AlertType.overdue_block_fired
                     text = (
                         f"{plate}: оплата не поступила к сроку — "
+                        "двигатель заблокирован"
+                    )
+                elif command.source == CommandSource.fines:
+                    atype = AlertType.fines_block_fired
+                    text = (
+                        f"{plate}: превышен лимит неоплаченных штрафов — "
                         "двигатель заблокирован"
                     )
                 else:
