@@ -415,6 +415,9 @@ class AlertType(str, enum.Enum):
     new_fine = "new_fine"
     armed_block_fired = "armed_block_fired"  # взведённая блокировка сработала
     armed_block_failed = "armed_block_failed"  # взвод не удалось отправить на реле
+    overdue_block_fired = "overdue_block_fired"  # авто-блокировка за неоплату сработала
+    overdue_unblock = "overdue_unblock"  # оплата пришла — двигатель авто-разблокирован
+    overdue_unblock_failed = "overdue_unblock_failed"  # авто-разблокировку не удалось отправить
 
 
 class AlertStatus(str, enum.Enum):
@@ -438,6 +441,14 @@ class CommandStatus(str, enum.Enum):
     acked = "acked"
     unconfirmed = "unconfirmed"
     failed = "failed"
+
+
+class CommandSource(str, enum.Enum):
+    """Кто инициировал команду. Отдельный от requested_by признак: по нему
+    авто-разблокировка снимает ТОЛЬКО свой блок и не трогает ручной (угон)."""
+
+    manual = "manual"  # админ
+    overdue = "overdue"  # авто-блокировка за неоплату
 
 
 class Rule(Base):
@@ -527,6 +538,12 @@ class Command(Base):
         Enum(CommandStatus, name="command_status"), default=CommandStatus.queued
     )
     requested_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Инициатор: manual — админ, overdue — авто-блокировка за неоплату. Явная
+    # колонка, а не requested_by IS NULL: по ней unblock_paid снимает ТОЛЬКО свой
+    # блок и никогда не трогает ручной (защита при угоне).
+    source: Mapped[str] = mapped_column(
+        String(16), default="manual", server_default="manual"
+    )
     alert_id: Mapped[int | None] = mapped_column(
         ForeignKey("alerts.id", ondelete="SET NULL"), nullable=True
     )

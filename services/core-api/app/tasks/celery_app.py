@@ -13,7 +13,13 @@ celery_app = Celery(
     "autopark",
     broker=settings.redis_url,
     backend=settings.redis_url,
-    include=["app.tasks.ping", "app.tasks.fines", "app.tasks.fines_tolom"],
+    include=[
+        "app.tasks.ping",
+        "app.tasks.fines",
+        "app.tasks.fines_tolom",
+        "app.tasks.payments_block",
+        "app.tasks.payments_unblock",
+    ],
 )
 
 celery_app.conf.update(

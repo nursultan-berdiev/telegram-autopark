@@ -54,6 +54,22 @@ def test_armed_block_fired_offers_unblock():
     assert "Заблокировать двигатель" not in labels
 
 
+def test_overdue_block_fired_offers_unblock():
+    """Авто-блок за неоплату сработал — предлагаем разблокировать, не блокировать."""
+    labels = _labels(_alert("overdue_block_fired"))
+
+    assert "Разблокировать двигатель" in labels
+    assert "Понятно" in labels
+    assert "Заблокировать двигатель" not in labels
+
+
+def test_overdue_unblock_is_informational_only():
+    """Авто-разблокировка при оплате — просто уведомление."""
+    labels = _labels(_alert("overdue_unblock", severity="info"))
+
+    assert labels == ["Понятно"]
+
+
 def test_unknown_type_is_informational_only():
     labels = _labels(_alert("что-то новое"))
 

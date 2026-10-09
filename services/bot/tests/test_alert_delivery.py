@@ -127,6 +127,53 @@ async def test_armed_block_fired_notifies_admin_and_driver(monkeypatch):
     assert await poll_alerts(bot, api) == 0, "повторно не шлём — ни админу, ни водителю"
 
 
+class _ApiWithDriver(_Api):
+    async def car(self, car_id: int) -> dict:
+        return {"id": car_id, "plate": "01KG777AAA", "driver_id": 5}
+
+    async def driver(self, driver_id: int) -> dict:
+        return {"driver": {"id": 5, "tg_user_id": 4242}}
+
+
+class _TextBot(_Bot):
+    """Как _Bot, но запоминает ещё и текст — проверяем причину блокировки."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.messages: list[tuple[int, str]] = []
+
+    async def send_message(self, chat_id, text, reply_markup=None):
+        self.messages.append((chat_id, text))
+        self.sent.append(chat_id)
+
+
+async def test_overdue_block_fired_notifies_driver_with_payment_text(monkeypatch):
+    """Авто-блок за неоплату: водителю — платёжный текст, админу — алерт; один раз."""
+    monkeypatch.setattr(alerts_module.settings, "admin_ids", [1])
+    alert = _alert(9, type="overdue_block_fired", text="оплата не поступила — заблокирован")
+    bot, api = _TextBot(), _ApiWithDriver([alert])
+
+    assert await poll_alerts(bot, api) == 1
+    assert 1 in bot.sent, "админ получил алерт"
+    driver_msgs = [t for cid, t in bot.messages if cid == 4242]
+    assert driver_msgs and "неоплат" in driver_msgs[0], "водителю — причина про неоплату"
+    assert "разблокируется автоматически" in driver_msgs[0]
+    assert await poll_alerts(bot, api) == 0, "повторно не шлём"
+
+
+async def test_overdue_unblock_notifies_driver(monkeypatch):
+    """Авто-разблокировка при оплате: водитель и админ узнают, один раз."""
+    monkeypatch.setattr(alerts_module.settings, "admin_ids", [1])
+    alert = _alert(9, type="overdue_unblock", severity="info", text="оплата получена — разблокирован")
+    bot, api = _TextBot(), _ApiWithDriver([alert])
+
+    assert await poll_alerts(bot, api) == 1
+    assert 1 in bot.sent
+    driver_msgs = [t for cid, t in bot.messages if cid == 4242]
+    assert driver_msgs and "Оплата получена" in driver_msgs[0]
+    assert await poll_alerts(bot, api) == 0
+
+
 async def test_mark_failure_defers_driver_notify(monkeypatch):
     """Серверная отметка не прошла → водителя НЕ уведомляем (иначе дубль каждый
     проход), алерт остаётся в pending и уйдёт на следующем проходе."""

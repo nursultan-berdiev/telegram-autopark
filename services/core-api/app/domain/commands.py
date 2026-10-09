@@ -20,6 +20,7 @@ from app.db.models import (
     Car,
     CarState,
     Command,
+    CommandSource,
     CommandStatus,
     CommandType,
     Tracker,
@@ -28,6 +29,10 @@ from app.domain import alerts as alerts_domain
 from app.domain import telemetry as telemetry_domain
 
 log = logging.getLogger(__name__)
+
+# Причина отказа при дедупе — одна на весь модуль: по ней вызывающий (в т.ч.
+# авто-блокировка) отличает «уже в полёте» от фактической отправки.
+DUPLICATE_REASON = "команда уже отправлена"
 
 # Стоящая машина шумит по GPS: строгое == 0 не выполнилось бы никогда.
 STOPPED_SPEED_KNOTS = 1.0
@@ -128,35 +133,73 @@ async def request_command(
     requested_by: int | None,
     alert_id: int | None = None,
     arm_if_unsafe: bool = False,
+    always_arm: bool = False,
+    source: CommandSource = CommandSource.manual,
     now: datetime | None = None,
 ) -> tuple[Command, bool, str | None]:
     """Возвращает (команда, отправлена ли, причина отказа).
 
     `arm_if_unsafe`: если гейт не пропускает (машина едет/офлайн), не отказываем,
     а взводим блокировку (`armed`) — отправится сама, когда машина встанет.
+
+    `always_arm`: взвести блокировку ВСЕГДА, даже на уже стоящей машине (не слать
+    сразу). Нужно авто-блокировке за неоплату: так и стоящая машина глохнет не
+    молча, а через `fire_armed` с уведомлением админа и водителя. Фактическую
+    отправку на реле всё равно решает тот же гейт.
+
+    `source`: кто инициировал (`manual` — админ, `overdue` — авто-блокировка за
+    неоплату). Хранится явной колонкой: по ней авто-разблокировка отличает свой
+    блок от ручного и никогда не снимает ручной (защита от снятия при угоне).
     """
     now = now or datetime.now(timezone.utc)
     ctype = parse_type(type_value)
 
     # Разблокировка снимает взведённую блокировку этой машины: иначе engine_resume
     # (например, со старой карточки алерта) не трогает armed engine_stop, и машина
-    # заглушится на остановке вопреки последней воле админа.
+    # заглушится на остановке вопреки последней воле админа. Системный resume
+    # (source=overdue, из release_if_paid) снимает ТОЛЬКО свои взводы — ручной
+    # отложенный блок админа (угон: «заглушить на остановке») не трогаем.
     if ctype is CommandType.engine_resume:
+        stmt = update(Command).where(
+            Command.car_id == car_id,
+            Command.type == CommandType.engine_stop,
+            Command.status == CommandStatus.armed,
+        )
+        if source != CommandSource.manual:
+            stmt = stmt.where(Command.source == source)
+        await session.execute(
+            stmt.values(status=CommandStatus.failed, result="снята разблокировкой двигателя")
+        )
+
+    # Ручная блокировка «забирает» себе активные системные команды машины (взвод
+    # или блок за неоплату): так авто-разблокировка после оплаты их уже не снимет.
+    # Делаем это ЯВНО (а не только через дедуп), иначе блок с карточки алерта
+    # (свой alert_id) дедуп системного не находит и защита зависела бы от пути.
+    if ctype is CommandType.engine_stop and source == CommandSource.manual:
         await session.execute(
             update(Command)
             .where(
                 Command.car_id == car_id,
                 Command.type == CommandType.engine_stop,
-                Command.status == CommandStatus.armed,
+                Command.source == CommandSource.overdue,
+                Command.status.in_(
+                    (
+                        CommandStatus.armed,
+                        CommandStatus.queued,
+                        CommandStatus.sent,
+                        CommandStatus.acked,
+                        CommandStatus.unconfirmed,
+                    )
+                ),
             )
-            .values(status=CommandStatus.failed, result="снята разблокировкой двигателя")
+            .values(source=CommandSource.manual)
         )
 
     duplicate = await _recent_duplicate(
         session, car_id=car_id, ctype=ctype, alert_id=alert_id, now=now
     )
     if duplicate is not None:
-        return duplicate, duplicate.status == CommandStatus.sent, "команда уже отправлена"
+        return duplicate, duplicate.status == CommandStatus.sent, DUPLICATE_REASON
 
     tracker = await session.scalar(
         select(Tracker).where(Tracker.car_id == car_id, Tracker.active.is_(True))
@@ -168,6 +211,7 @@ async def request_command(
         status=CommandStatus.queued,
         requested_by=requested_by,
         alert_id=alert_id,
+        source=source,
     )
     session.add(command)
 
@@ -181,6 +225,13 @@ async def request_command(
     if ctype in BLOCK_TYPES:
         gate = check_safety(state, now)
         command.safety_snapshot = gate.snapshot
+        if always_arm:
+            # Взводим независимо от гейта: отправит и уведомит fire_armed на
+            # первой безопасной точке (стоящая машина — уже следующая точка).
+            command.status = CommandStatus.armed
+            command.result = gate.reason or "взведено автоматически (неоплата)"
+            await session.flush()
+            return command, False, command.result
         if not gate.passed:
             if arm_if_unsafe:
                 # Не отказываем — взводим: заглушим сами, как только машина встанет.
@@ -449,16 +500,27 @@ async def fire_armed(
                     state.last_command = command.type.value
                 car = await session.get(Car, command.car_id)
                 plate = car.plate if car else str(command.car_id)
+                # Системный взвод (source=overdue) ставит планировщик за неоплату —
+                # у него свой тип алерта и платёжный текст водителю.
+                if command.source == CommandSource.overdue:
+                    atype = AlertType.overdue_block_fired
+                    text = (
+                        f"{plate}: оплата не поступила к сроку — "
+                        "двигатель заблокирован"
+                    )
+                else:
+                    atype = AlertType.armed_block_fired
+                    text = (
+                        f"{plate} встала — двигатель заблокирован "
+                        "(сработала отложенная блокировка)"
+                    )
                 await alerts_domain.raise_alert(
                     session,
                     car_id=command.car_id,
-                    atype=AlertType.armed_block_fired,
+                    atype=atype,
                     severity="warning",
                     payload={"command_id": command.id, "plate": plate},
-                    text=(
-                        f"{plate} встала — двигатель заблокирован "
-                        "(сработала отложенная блокировка)"
-                    ),
+                    text=text,
                     now=now,
                 )
                 fired += 1
