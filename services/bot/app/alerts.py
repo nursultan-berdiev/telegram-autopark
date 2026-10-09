@@ -15,13 +15,24 @@ from app.client import ApiClient, ApiError
 from app.config import settings
 from app.fines_view import esc
 from app.keyboards.fines import fines_page
-from app.notify import DRIVER_BLOCKED_TEXT, notify_driver
+from app.notify import (
+    DRIVER_BLOCKED_TEXT,
+    DRIVER_OVERDUE_BLOCKED_TEXT,
+    DRIVER_OVERDUE_UNBLOCKED_TEXT,
+    notify_driver,
+)
 
 log = logging.getLogger(__name__)
 
 RULE_TYPES = {"overdue_payment", "fines_count", "maintenance_km"}
-# Типы алертов, при доставке которых надо уведомить ещё и водителя.
-DRIVER_NOTIFY_TYPES = {"armed_block_fired"}
+# Типы алертов, при доставке которых надо уведомить ещё и водителя — и каким текстом.
+DRIVER_NOTIFY_TEXT = {
+    "armed_block_fired": DRIVER_BLOCKED_TEXT,
+    "overdue_block_fired": DRIVER_OVERDUE_BLOCKED_TEXT,
+    "overdue_unblock": DRIVER_OVERDUE_UNBLOCKED_TEXT,
+}
+# Карточки с кнопкой «Разблокировать»: авто-сработавший блок (ручной взвод и за неоплату).
+UNBLOCK_CARD_TYPES = {"armed_block_fired", "overdue_block_fired"}
 
 _SEVERITY_MARK = {"info": "•", "warning": "!", "critical": "!!"}
 
@@ -57,8 +68,8 @@ def alert_keyboard(alert: dict) -> InlineKeyboardMarkup:
                 ),
             ]
         ]
-    elif atype == "armed_block_fired":
-        # Взвод сработал — двигатель заглушён; предлагаем сразу разблокировать.
+    elif atype in UNBLOCK_CARD_TYPES:
+        # Блок сработал — двигатель заглушён; предлагаем сразу разблокировать.
         rows = [
             [
                 InlineKeyboardButton(
@@ -188,8 +199,9 @@ async def poll_alerts(bot: Bot, api: ApiClient) -> int:
             log.error("не удалось отметить алерт %s доставленным: %s", alert_id, exc)
             continue
         delivered += shown
-        # Авто-сработавшая блокировка — водитель узнаёт в момент срабатывания.
-        if alert.get("type") in DRIVER_NOTIFY_TYPES:
-            await notify_driver(bot, api, int(alert["car_id"]), DRIVER_BLOCKED_TEXT)
+        # Авто-сработавшая блокировка/разблокировка — водитель узнаёт в этот момент.
+        driver_text = DRIVER_NOTIFY_TEXT.get(alert.get("type", ""))
+        if driver_text is not None:
+            await notify_driver(bot, api, int(alert["car_id"]), driver_text)
 
     return delivered

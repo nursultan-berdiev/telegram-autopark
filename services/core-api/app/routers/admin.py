@@ -32,6 +32,8 @@ templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent
 KNOWN_TASKS = {
     "app.tasks.fines_tolom.check_fines_tolom": "Проверка штрафов по парку (tolom.kg, с суммами)",
     "app.tasks.fines.check_fines": "Проверка штрафов по парку (carcheck.gov.kg, запасной)",
+    "app.tasks.payments_block.block_overdue": "Блокировка двигателя неоплативших к сроку",
+    "app.tasks.payments_unblock.unblock_paid": "Разблокировка двигателя после оплаты",
     "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
 }
 
