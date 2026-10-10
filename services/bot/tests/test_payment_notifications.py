@@ -1,127 +1,77 @@
-"""Вечерние уведомления у срока: доставка водителям/админам и разбор времени."""
+"""Петля drain_outbox: бот шлёт очередь исходящих и помечает доставку."""
 from __future__ import annotations
 
-import pytest
-from pydantic import ValidationError
+from aiogram.exceptions import TelegramForbiddenError
 
-import app.scheduler as scheduler
 from app.client import ApiError
-from app.scheduler import _parse_hm, send_admin_digest, send_block_notices, send_overdue_warnings
+from app.scheduler import drain_outbox
 
 
 class _Bot:
-    def __init__(self, fail_ids: tuple[int, ...] = ()) -> None:
+    def __init__(self, *, fail_ids: tuple[int, ...] = (), permanent_ids: tuple[int, ...] = ()) -> None:
         self.sent: list[int] = []
         self.fail_ids = set(fail_ids)
+        self.permanent_ids = set(permanent_ids)
 
     async def send_message(self, chat_id: int, text: str, **kwargs) -> None:
+        if chat_id in self.permanent_ids:
+            raise TelegramForbiddenError(method=None, message="bot was blocked by the user")
         if chat_id in self.fail_ids:
-            raise RuntimeError("Forbidden: bot was blocked by the user")
+            raise RuntimeError("временный сбой сети")
         self.sent.append(chat_id)
 
 
 class _Api:
-    def __init__(self, notices=None, *, digest=None, fail_fetch=False) -> None:
-        self._notices = notices or []
-        self._digest = digest
+    def __init__(self, pending, *, fail_fetch: bool = False) -> None:
+        self._pending = pending
         self.fail_fetch = fail_fetch
-        self.marked: list[list[int]] = []
+        self.sent: list[int] = []
+        self.failed: list[tuple[int, bool]] = []
 
-    async def _plan(self, now=None, *, force=False) -> dict:
+    async def outbox_pending(self) -> list[dict]:
         if self.fail_fetch:
             raise ApiError("core-api недоступен")
-        return {"notices": self._notices}
+        return self._pending
 
-    reminders_overdue_warning = _plan
-    reminders_block_notice = _plan
+    async def outbox_sent(self, message_id: int) -> None:
+        self.sent.append(message_id)
 
-    async def reminders_mark_warning(self, schedule_ids, on_date=None) -> None:
-        self.marked.append(schedule_ids)
-
-    async def reminders_mark_block_notice(self, schedule_ids, on_date=None) -> None:
-        self.marked.append(schedule_ids)
-
-    async def reminders_admin_digest(self, now=None) -> dict:
-        if self.fail_fetch:
-            raise ApiError("core-api недоступен")
-        return {"text": self._digest}
+    async def outbox_failed(self, message_id: int, *, permanent: bool = False) -> None:
+        self.failed.append((message_id, permanent))
 
 
-async def test_warnings_mark_only_actually_sent():
-    notices = [
-        {"schedule_id": 1, "tg_user_id": 10, "text": "a"},
-        {"schedule_id": 2, "tg_user_id": 20, "text": "b"},
-    ]
-    bot, api = _Bot(fail_ids=(20,)), _Api(notices)
-    out = await send_overdue_warnings(bot, api)
+def _msg(mid: int, recipient: int) -> dict:
+    return {"id": mid, "recipient_tg_user_id": recipient, "text": "t", "kind": "reminder"}
+
+
+async def test_drain_sends_and_marks_sent():
+    bot = _Bot()
+    api = _Api([_msg(1, 10), _msg(2, 20)])
+    out = await drain_outbox(bot, api)
+    assert out == 2
+    assert bot.sent == [10, 20]
+    assert api.sent == [1, 2] and api.failed == []
+
+
+async def test_drain_transient_error_marks_failed_not_permanent():
+    bot = _Bot(fail_ids=(20,))
+    api = _Api([_msg(1, 10), _msg(2, 20)])
+    out = await drain_outbox(bot, api)
+    assert out == 1
     assert bot.sent == [10]
-    assert api.marked == [[1]]  # только реально отправленный график
-    assert out == {"drivers": 1}
+    assert api.sent == [1] and api.failed == [(2, False)]
 
 
-async def test_warnings_fetch_error_is_swallowed():
-    bot, api = _Bot(), _Api(fail_fetch=True)
-    out = await send_overdue_warnings(bot, api)
-    assert out == {"drivers": 0} and bot.sent == [] and api.marked == []
+async def test_drain_permanent_error_marks_failed_permanent():
+    bot = _Bot(permanent_ids=(20,))
+    api = _Api([_msg(1, 10), _msg(2, 20)])
+    out = await drain_outbox(bot, api)
+    assert out == 1
+    assert bot.sent == [10]
+    assert api.failed == [(2, True)]  # заблокирован ботом → сдаёмся сразу
 
 
-async def test_block_notices_sent_and_marked():
-    bot, api = _Bot(), _Api([{"schedule_id": 7, "tg_user_id": 70, "text": "блок"}])
-    out = await send_block_notices(bot, api)
-    assert bot.sent == [70] and api.marked == [[7]] and out == {"drivers": 1}
-
-
-async def test_admin_digest_empty_text_sends_nothing(monkeypatch):
-    monkeypatch.setattr(scheduler.settings, "admin_ids", [1, 2])
-    bot, api = _Bot(), _Api(digest=None)
-    out = await send_admin_digest(bot, api)
-    assert out == {"owners": 0} and bot.sent == []
-
-
-async def test_admin_digest_goes_to_all_admins(monkeypatch):
-    monkeypatch.setattr(scheduler.settings, "admin_ids", [1, 2])
-    bot, api = _Bot(), _Api(digest="сводка")
-    out = await send_admin_digest(bot, api)
-    assert out == {"owners": 2} and bot.sent == [1, 2]
-
-
-def test_parse_hm_ok():
-    assert _parse_hm("21:45") == (21, 45) and _parse_hm("09:00") == (9, 0)
-
-
-def test_cron_at_uses_park_timezone():
-    """Регресс: CronTrigger должен стрелять по зоне парка, а не по UTC контейнера.
-    Без явного timezone= APScheduler 3.x брал бы UTC, и 22:05 уехало бы на 04:05
-    по Бишкеку (из-за чего вечерние уведомления не приходили в срок)."""
-    from datetime import datetime
-    from zoneinfo import ZoneInfo
-
-    from app.scheduler import _cron_at
-
-    tz = ZoneInfo("Asia/Bishkek")
-    nxt = _cron_at(22, 5).get_next_fire_time(None, datetime(2026, 10, 10, 20, 0, tzinfo=tz))
-    assert nxt is not None
-    assert (nxt.hour, nxt.minute) == (22, 5)
-    assert nxt.utcoffset().total_seconds() == 6 * 3600  # +06:00, не UTC
-
-
-@pytest.mark.parametrize(
-    "alias", ["PAYMENT_WARN_AT", "PAYMENT_BLOCK_NOTICE_AT", "PAYMENT_DIGEST_AT"]
-)
-@pytest.mark.parametrize("bad", ["22.00", "2200", "25:00", "", "abc"])
-def test_config_rejects_bad_time(alias, bad):
-    # Значение передаём по АЛИАСУ (как из env): поле без populate_by_name не
-    # принимает имя поля в конструкторе — иначе дефолт, и валидатор не сработает.
-    from app.config import Settings
-
-    with pytest.raises(ValidationError):
-        Settings(**{alias: bad})
-
-
-@pytest.mark.parametrize(
-    "alias", ["PAYMENT_WARN_AT", "PAYMENT_BLOCK_NOTICE_AT", "PAYMENT_DIGEST_AT"]
-)
-def test_config_accepts_valid_time(alias):
-    from app.config import Settings
-
-    assert Settings(**{alias: "21:45"})  # валидный формат не роняет
+async def test_drain_fetch_error_is_swallowed():
+    bot, api = _Bot(), _Api([], fail_fetch=True)
+    out = await drain_outbox(bot, api)
+    assert out == 0 and bot.sent == [] and api.sent == [] and api.failed == []
