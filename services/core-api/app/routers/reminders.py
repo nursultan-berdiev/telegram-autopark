@@ -13,9 +13,22 @@ from app.config import settings
 from app.db.models import PaymentSchedule
 from app.db.session import get_session
 from app.domain import reminders as reminders_domain
-from contracts import ReminderItem, ReminderMark, ReminderPlanDTO
+from contracts import (
+    AdminDigest,
+    DriverNotice,
+    DriverNoticePlan,
+    ReminderItem,
+    ReminderMark,
+    ReminderPlanDTO,
+)
 
 router = APIRouter()
+
+
+def _now_or_utc(now: datetime | None) -> datetime:
+    if now is None:
+        return datetime.now(timezone.utc)
+    return now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
 
 
 @router.get("/plan", response_model=ReminderPlanDTO)
@@ -72,4 +85,78 @@ async def mark(
 ) -> Response:
     on_date = payload.on_date or datetime.now(ZoneInfo(settings.timezone)).date()
     await reminders_domain.mark_reminded(session, payload.schedule_ids, on_date)
+    return Response(status_code=204)
+
+
+def _notice_plan(rows, today) -> DriverNoticePlan:
+    return DriverNoticePlan(
+        notices=[
+            DriverNotice(schedule_id=r.schedule_id, tg_user_id=r.tg_user_id, text=r.text)
+            for r in rows
+        ],
+        today=today,
+    )
+
+
+@router.get("/overdue-warning", response_model=DriverNoticePlan)
+async def overdue_warning(
+    force: bool = False,
+    now: datetime | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> DriverNoticePlan:
+    now = _now_or_utc(now)
+    rows = await reminders_domain.collect_overdue_warning(
+        session, now, settings.timezone, lead_minutes=settings.warn_lead_minutes, force=force
+    )
+    today = now.astimezone(ZoneInfo(settings.timezone)).date()
+    return _notice_plan(rows, today)
+
+
+@router.get("/block-notice", response_model=DriverNoticePlan)
+async def block_notice(
+    force: bool = False,
+    now: datetime | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> DriverNoticePlan:
+    now = _now_or_utc(now)
+    rows = await reminders_domain.collect_block_notice(
+        session, now, settings.timezone, force=force
+    )
+    today = now.astimezone(ZoneInfo(settings.timezone)).date()
+    return _notice_plan(rows, today)
+
+
+@router.get("/admin-digest", response_model=AdminDigest)
+async def admin_digest(
+    now: datetime | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> AdminDigest:
+    now = _now_or_utc(now)
+    text = await reminders_domain.collect_admin_digest(session, now, settings.timezone)
+    today = now.astimezone(ZoneInfo(settings.timezone)).date()
+    return AdminDigest(text=text, today=today)
+
+
+@router.post("/mark-warning", status_code=204, response_model=None)
+async def mark_warning(
+    payload: ReminderMark,
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> Response:
+    on_date = payload.on_date or datetime.now(ZoneInfo(settings.timezone)).date()
+    await reminders_domain.mark_warned(session, payload.schedule_ids, on_date)
+    return Response(status_code=204)
+
+
+@router.post("/mark-block-notice", status_code=204, response_model=None)
+async def mark_block_notice(
+    payload: ReminderMark,
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> Response:
+    on_date = payload.on_date or datetime.now(ZoneInfo(settings.timezone)).date()
+    await reminders_domain.mark_block_notice(session, payload.schedule_ids, on_date)
     return Response(status_code=204)

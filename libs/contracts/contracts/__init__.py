@@ -31,10 +31,13 @@ from .payments import (
     RecognizedReceiptDTO,
 )
 from .reports import (
+    AdminDigest,
     AssistantAnswer,
     AssistantQuery,
     CarDriverRow,
     CarTotalRow,
+    DriverNotice,
+    DriverNoticePlan,
     DriverTotalRow,
     ReminderItem,
     ReminderMark,
@@ -58,6 +61,7 @@ __all__ = [
     "PaymentDTO", "PaymentCreate", "PaymentResult", "RecognizedReceiptDTO",
     "CarDriverRow", "UpcomingRow", "DriverTotalRow", "CarTotalRow",
     "ReminderItem", "ReminderPlanDTO", "ReminderMark",
+    "DriverNotice", "DriverNoticePlan", "AdminDigest",
     "AssistantQuery", "AssistantAnswer",
     "TelemetryPoint", "TelemetryBatchResult",
     "CommandRequest", "CommandDTO", "CommandResult",

@@ -159,6 +159,11 @@ class PaymentSchedule(Base):
     # Локальная дата последнего напоминания — не чаще одного в день,
     # иначе при просрочке в 40 дней водитель получит 40 сообщений.
     last_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # Локальные даты вечерних уведомлений у срока 22:00 — свой антиспам «раз в
+    # день» для каждого (предупреждение за 15 мин и «блок включён»), чтобы
+    # перезапуск бота около срока не отправил их повторно.
+    last_warned_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    last_block_notice_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
