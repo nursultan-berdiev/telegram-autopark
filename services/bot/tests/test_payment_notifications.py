@@ -89,6 +89,22 @@ def test_parse_hm_ok():
     assert _parse_hm("21:45") == (21, 45) and _parse_hm("09:00") == (9, 0)
 
 
+def test_cron_at_uses_park_timezone():
+    """Регресс: CronTrigger должен стрелять по зоне парка, а не по UTC контейнера.
+    Без явного timezone= APScheduler 3.x брал бы UTC, и 22:05 уехало бы на 04:05
+    по Бишкеку (из-за чего вечерние уведомления не приходили в срок)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from app.scheduler import _cron_at
+
+    tz = ZoneInfo("Asia/Bishkek")
+    nxt = _cron_at(22, 5).get_next_fire_time(None, datetime(2026, 10, 10, 20, 0, tzinfo=tz))
+    assert nxt is not None
+    assert (nxt.hour, nxt.minute) == (22, 5)
+    assert nxt.utcoffset().total_seconds() == 6 * 3600  # +06:00, не UTC
+
+
 @pytest.mark.parametrize(
     "alias", ["PAYMENT_WARN_AT", "PAYMENT_BLOCK_NOTICE_AT", "PAYMENT_DIGEST_AT"]
 )

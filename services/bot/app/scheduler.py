@@ -146,6 +146,14 @@ def _parse_hm(value: str) -> tuple[int, int]:
     return hour, minute
 
 
+def _cron_at(hour: int, minute: int) -> CronTrigger:
+    """CronTrigger с ЯВНОЙ зоной парка. APScheduler 3.x НЕ навешивает зону
+    планировщика на уже созданный экземпляр триггера — без timezone= он берёт
+    локальную зону контейнера (UTC), и задача уедет на несколько часов (у нас
+    21:45/22:00/22:05 стреляли бы в UTC = ~04:00 по Бишкеку)."""
+    return CronTrigger(hour=hour, minute=minute, timezone=ZoneInfo(settings.timezone))
+
+
 def setup_scheduler(bot: Bot, api: ApiClient) -> AsyncIOScheduler:
     """Планировщик стартует всегда: опрос алертов не зависит от напоминаний.
 
@@ -165,7 +173,7 @@ def setup_scheduler(bot: Bot, api: ApiClient) -> AsyncIOScheduler:
     if settings.reminders_enabled:
         scheduler.add_job(
             send_daily_reminders,
-            CronTrigger(hour=settings.reminder_hour, minute=0),
+            _cron_at(settings.reminder_hour, 0),
             args=[bot, api],
             id="daily_reminders",
             replace_existing=True,
@@ -186,7 +194,7 @@ def setup_scheduler(bot: Bot, api: ApiClient) -> AsyncIOScheduler:
         hour, minute = _parse_hm(at)
         scheduler.add_job(
             fn,
-            CronTrigger(hour=hour, minute=minute),
+            _cron_at(hour, minute),
             args=[bot, api],
             id=job_id,
             replace_existing=True,
