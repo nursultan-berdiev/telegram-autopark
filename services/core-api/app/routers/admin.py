@@ -35,6 +35,10 @@ KNOWN_TASKS = {
     "app.tasks.payments_block.block_overdue": "Блокировка двигателя неоплативших к сроку",
     "app.tasks.payments_unblock.unblock_paid": "Разблокировка двигателя после оплаты",
     "app.tasks.fines_enforcement.enforce_fines": "Блокировка двигателя при превышении лимита штрафов",
+    "app.tasks.notifications.notify_daily_reminders": "Утреннее напоминание о платеже водителям",
+    "app.tasks.notifications.notify_overdue_warning": "Предупреждение водителю за 15 мин до срока",
+    "app.tasks.notifications.notify_block_notice": "Уведомление водителю: блокировка включена (22:00)",
+    "app.tasks.notifications.notify_admin_digest": "Админ-дайджест по платежам (22:05)",
     "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
 }
 

@@ -1,18 +1,18 @@
-"""Фоновые задачи бота: напоминания и опрос алертов.
+"""Фоновые петли бота: опрос алертов и отправка очереди исходящих.
 
-Считает всё core-api; бот только тянет план и доставляет сообщения —
-у сервера нет канала в Telegram (plan/03, plan/06).
+Весь расчёт и расписание — на стороне core-api (celery-beat + periodic_tasks).
+Бот — «тупой отправитель»: единственный процесс с доступом в Telegram. Две
+инфраструктурные петли (не операторские задачи): `poll_alerts` разносит алерты,
+`drain_outbox` шлёт сообщения, которые положили в очередь celery-задачи.
 """
 from __future__ import annotations
 
 import logging
-from collections.abc import Awaitable, Callable
-from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from aiogram import Bot
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.alerts import poll_alerts
@@ -22,146 +22,62 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 ALERT_POLL_SECONDS = 90
+OUTBOX_DRAIN_SECONDS = 30
+# Постоянные ошибки доставки: бот заблокирован, чат не найден, невалидный запрос.
+# Их бессмысленно ретраить — сдаёмся сразу. Остальное считаем временным.
+_PERMANENT_SEND_ERRORS = (TelegramForbiddenError, TelegramBadRequest)
 
 
-async def send_daily_reminders(
-    bot: Bot, api: ApiClient, now: datetime | None = None, *, force: bool = False
-) -> dict[str, int]:
-    """Один прогон рассылки. Возвращает счётчики (для логов и тестов).
+async def _mark_failed(api: ApiClient, message_id: int, *, permanent: bool) -> None:
+    try:
+        await api.outbox_failed(message_id, permanent=permanent)
+    except ApiError as exc:
+        log.warning("outbox %s: не отметить неудачу: %s", message_id, exc)
 
-    force=True — обойти антиспам «раз в день» (ручной прогон /remind_now force).
+
+async def drain_outbox(bot: Bot, api: ApiClient) -> int:
+    """Отправляет неотправленные сообщения из очереди core-api.
+
+    Семантика at-least-once: отметку `sent` делаем ПОСЛЕ отправки, поэтому при
+    сбое отметки сообщение уйдёт повторно на следующем проходе — редкий дубль
+    предпочтён потере платёжного уведомления (пара повторов отметки сужает окно).
+    Постоянная ошибка (бот заблокирован/нет чата) — сдаёмся сразу; временная —
+    счётчик попыток на сервере (лимит как страховка от вечного ретрая).
+    Возвращает число отправленных (для логов/тестов).
     """
-    tzinfo = ZoneInfo(settings.timezone)
-    now = now or datetime.now(tzinfo)
-
     try:
-        plan = await api.reminders_plan(now, force=force)
+        rows = await api.outbox_pending()
     except ApiError as exc:
-        log.warning("напоминания: core-api недоступен (%s)", exc)
-        return {"drivers": 0, "owners": 0}
+        log.debug("outbox: core-api недоступен (%s)", exc)
+        return 0
 
-    sent: list[int] = []
-    for reminder in plan.get("reminders", []):
+    sent = 0
+    for msg in rows:
+        mid = msg["id"]
         try:
-            await bot.send_message(reminder["tg_user_id"], reminder["text"])
-            sent.append(reminder["schedule_id"])
-        except Exception as e:  # noqa: BLE001 — один водитель не должен ронять рассылку
-            log.warning("Не удалось напомнить водителю %s: %s", reminder["tg_user_id"], e)
-
-    if sent:
-        try:
-            await api.reminders_mark(sent)
-        except ApiError as exc:
-            log.warning("не удалось отметить напоминания: %s", exc)
-
-    owners = 0
-    digest = plan.get("owner_digest") or []
-    if digest:
-        text = "\n".join(digest)
-        for admin_id in settings.admin_ids:
+            await bot.send_message(msg["recipient_tg_user_id"], msg["text"])
+        except _PERMANENT_SEND_ERRORS as e:
+            log.warning("outbox %s: постоянная ошибка (%s) — сдаёмся", mid, e)
+            await _mark_failed(api, mid, permanent=True)
+            continue
+        except Exception as e:  # noqa: BLE001 — временная ошибка: повтор на следующем проходе
+            log.warning("outbox %s: временная ошибка доставки: %s", mid, e)
+            await _mark_failed(api, mid, permanent=False)
+            continue
+        sent += 1
+        for attempt in range(2):  # at-least-once: сузить окно дубля при сбое отметки
             try:
-                await bot.send_message(admin_id, text)
-                owners += 1
-            except Exception as e:  # noqa: BLE001
-                log.warning("Не удалось отправить сводку админу %s: %s", admin_id, e)
-
-    return {"drivers": len(sent), "owners": owners}
-
-
-async def send_overdue_warnings(
-    bot: Bot, api: ApiClient, now: datetime | None = None, *, force: bool = False
-) -> dict[str, int]:
-    """Предупреждение водителю за 15 мин до срока (если аренда не оплачена)."""
-    return await _send_driver_notices(
-        bot, api, api.reminders_overdue_warning, api.reminders_mark_warning, now, force=force
-    )
-
-
-async def send_block_notices(
-    bot: Bot, api: ApiClient, now: datetime | None = None, *, force: bool = False
-) -> dict[str, int]:
-    """Уведомление водителю в 22:00: блокировка двигателя за аренду включена."""
-    return await _send_driver_notices(
-        bot, api, api.reminders_block_notice, api.reminders_mark_block_notice, now, force=force
-    )
-
-
-async def _send_driver_notices(
-    bot: Bot,
-    api: ApiClient,
-    fetch: Callable[..., Awaitable[dict]],
-    mark: Callable[[list[int]], Awaitable[None]],
-    now: datetime | None,
-    *,
-    force: bool,
-) -> dict[str, int]:
-    now = now or datetime.now(ZoneInfo(settings.timezone))
-    try:
-        plan = await fetch(now, force=force)
-    except ApiError as exc:
-        log.warning("уведомления водителям: core-api недоступен (%s)", exc)
-        return {"drivers": 0}
-
-    sent: list[int] = []
-    for notice in plan.get("notices", []):
-        try:
-            await bot.send_message(notice["tg_user_id"], notice["text"])
-            sent.append(notice["schedule_id"])
-        except Exception as e:  # noqa: BLE001 — один водитель не должен ронять рассылку
-            log.warning("не удалось уведомить водителя %s: %s", notice["tg_user_id"], e)
-    if sent:
-        try:
-            await mark(sent)
-        except ApiError as exc:
-            log.warning("не удалось отметить уведомления: %s", exc)
-    return {"drivers": len(sent)}
-
-
-async def send_admin_digest(
-    bot: Bot, api: ApiClient, now: datetime | None = None
-) -> dict[str, int]:
-    """Вечерняя сводка владельцу: кто оплатил/нет, автоблокировки."""
-    try:
-        data = await api.reminders_admin_digest(now)
-    except ApiError as exc:
-        log.warning("админ-дайджест: core-api недоступен (%s)", exc)
-        return {"owners": 0}
-    text = data.get("text")
-    if not text:
-        return {"owners": 0}
-    owners = 0
-    for admin_id in settings.admin_ids:
-        try:
-            await bot.send_message(admin_id, text)
-            owners += 1
-        except Exception as e:  # noqa: BLE001
-            log.warning("не удалось отправить дайджест админу %s: %s", admin_id, e)
-    return {"owners": owners}
-
-
-def _parse_hm(value: str) -> tuple[int, int]:
-    """'ЧЧ:ММ' → (час, минута). Формат уже проверен в Settings (`_valid_hm`),
-    поэтому здесь просто разбор — без молчаливой подмены на полночь."""
-    hour, minute = (int(part) for part in value.split(":", 1))
-    return hour, minute
-
-
-def _cron_at(hour: int, minute: int) -> CronTrigger:
-    """CronTrigger с ЯВНОЙ зоной парка. APScheduler 3.x НЕ навешивает зону
-    планировщика на уже созданный экземпляр триггера — без timezone= он берёт
-    локальную зону контейнера (UTC), и задача уедет на несколько часов (у нас
-    21:45/22:00/22:05 стреляли бы в UTC = ~04:00 по Бишкеку)."""
-    return CronTrigger(hour=hour, minute=minute, timezone=ZoneInfo(settings.timezone))
+                await api.outbox_sent(mid)
+                break
+            except ApiError as exc:
+                if attempt == 1:
+                    log.warning("outbox %s: доставлено, но отметка не прошла: %s", mid, exc)
+    return sent
 
 
 def setup_scheduler(bot: Bot, api: ApiClient) -> AsyncIOScheduler:
-    """Планировщик стартует всегда: опрос алертов не зависит от напоминаний.
-
-    Утреннее напоминание — под REMINDERS_ENABLED; каждая вечерняя задача у срока —
-    под своим флагом (независимое отключение)."""
+    """Поднимает две инфраструктурные петли. Бизнес-расписания — в celery-beat."""
     scheduler = AsyncIOScheduler(timezone=ZoneInfo(settings.timezone))
-
-    # Опрос алертов — безусловно (раньше гас вместе с напоминаниями).
     scheduler.add_job(
         poll_alerts,
         IntervalTrigger(seconds=ALERT_POLL_SECONDS),
@@ -169,45 +85,19 @@ def setup_scheduler(bot: Bot, api: ApiClient) -> AsyncIOScheduler:
         id="poll_alerts",
         replace_existing=True,
     )
-
-    if settings.reminders_enabled:
-        scheduler.add_job(
-            send_daily_reminders,
-            _cron_at(settings.reminder_hour, 0),
-            args=[bot, api],
-            id="daily_reminders",
-            replace_existing=True,
-        )
-    else:
-        log.info("Утренние напоминания отключены (REMINDERS_ENABLED=0)")
-
-    # Вечерние уведомления у срока 22:00 — три независимо отключаемые задачи.
-    evening = [
-        ("payment_warn", settings.payment_warn_enabled, settings.payment_warn_at, send_overdue_warnings),
-        ("payment_block_notice", settings.payment_block_notice_enabled, settings.payment_block_notice_at, send_block_notices),
-        ("payment_digest", settings.payment_digest_enabled, settings.payment_digest_at, send_admin_digest),
-    ]
-    enabled_jobs = []
-    for job_id, enabled, at, fn in evening:
-        if not enabled:
-            continue
-        hour, minute = _parse_hm(at)
-        scheduler.add_job(
-            fn,
-            _cron_at(hour, minute),
-            args=[bot, api],
-            id=job_id,
-            replace_existing=True,
-            coalesce=True,
-            misfire_grace_time=300,
-        )
-        enabled_jobs.append(f"{job_id}@{hour:02d}:{minute:02d}")
-
+    scheduler.add_job(
+        drain_outbox,
+        IntervalTrigger(seconds=OUTBOX_DRAIN_SECONDS),
+        args=[bot, api],
+        id="drain_outbox",
+        replace_existing=True,
+        max_instances=1,  # не допускаем параллельных проходов (двойная отправка)
+        coalesce=True,
+    )
     scheduler.start()
     log.info(
-        "Планировщик (%s): опрос алертов раз в %d с; вечерние задачи: %s",
-        settings.timezone,
+        "Петли бота: опрос алертов раз в %d с, отправка очереди раз в %d с",
         ALERT_POLL_SECONDS,
-        ", ".join(enabled_jobs) or "нет",
+        OUTBOX_DRAIN_SECONDS,
     )
     return scheduler

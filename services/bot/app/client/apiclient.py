@@ -253,64 +253,17 @@ class ApiClient:
     async def assistant_query(self, question: str) -> dict:
         return await self._request("POST", "/assistant/query", json={"question": question})
 
-    # --- Напоминания ---------------------------------------------------------
-    async def reminders_plan(
-        self, now: datetime | None = None, *, force: bool = False
-    ) -> dict:
-        params: dict = {}
-        if now is not None:
-            params["now"] = now
-        if force:
-            params["force"] = 1
-        return await self._request("GET", "/reminders/plan", params=params or None)
+    # --- Очередь исходящих (бот шлёт, core-api/celery пишут) ------------------
+    async def outbox_pending(self) -> list[dict]:
+        """Неотправленные сообщения из очереди (recipient_tg_user_id, text, kind)."""
+        return await self._request("GET", "/outbox/pending")
 
-    async def reminders_mark(
-        self, schedule_ids: list[int], on_date: date | None = None
-    ) -> None:
-        """Дату по умолчанию ставит сервер — у него и живёт таймзона парка."""
-        await self._mark_notice("/reminders/mark", schedule_ids, on_date)
+    async def outbox_sent(self, message_id: int) -> None:
+        await self._request("POST", f"/outbox/{message_id}/sent")
 
-    async def reminders_overdue_warning(
-        self, now: datetime | None = None, *, force: bool = False
-    ) -> dict:
-        return await self._notice_plan("/reminders/overdue-warning", now, force=force)
-
-    async def reminders_block_notice(
-        self, now: datetime | None = None, *, force: bool = False
-    ) -> dict:
-        return await self._notice_plan("/reminders/block-notice", now, force=force)
-
-    async def reminders_admin_digest(self, now: datetime | None = None) -> dict:
-        params: dict = {"now": now} if now is not None else {}
-        return await self._request("GET", "/reminders/admin-digest", params=params or None)
-
-    async def reminders_mark_warning(
-        self, schedule_ids: list[int], on_date: date | None = None
-    ) -> None:
-        await self._mark_notice("/reminders/mark-warning", schedule_ids, on_date)
-
-    async def reminders_mark_block_notice(
-        self, schedule_ids: list[int], on_date: date | None = None
-    ) -> None:
-        await self._mark_notice("/reminders/mark-block-notice", schedule_ids, on_date)
-
-    async def _notice_plan(
-        self, path: str, now: datetime | None, *, force: bool
-    ) -> dict:
-        params: dict = {}
-        if now is not None:
-            params["now"] = now
-        if force:
-            params["force"] = 1
-        return await self._request("GET", path, params=params or None)
-
-    async def _mark_notice(
-        self, path: str, schedule_ids: list[int], on_date: date | None
-    ) -> None:
-        payload: dict = {"schedule_ids": schedule_ids}
-        if on_date is not None:
-            payload["on_date"] = on_date
-        await self._request("POST", path, json=payload)
+    async def outbox_failed(self, message_id: int, *, permanent: bool = False) -> None:
+        params = {"permanent": "true"} if permanent else None
+        await self._request("POST", f"/outbox/{message_id}/failed", params=params)
 
     # --- Телеметрия и трекеры ------------------------------------------------
     async def car_state(self, car_id: int) -> dict:
