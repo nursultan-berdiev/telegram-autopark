@@ -23,6 +23,7 @@ from app.routers import (
     maintenance,
     invitations,
     me,
+    outbox,
     payments,
     admin,
     periodic,
@@ -96,6 +97,7 @@ app.include_router(commands.router, tags=["commands"])
 app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
 app.include_router(periodic.router, tags=["periodic"])
+app.include_router(outbox.router, tags=["outbox"])
 app.include_router(admin.router, tags=["admin"])
 
 # MCP-сервер ИИ-ассистента (read-only). Монтируем только при включённой фиче и

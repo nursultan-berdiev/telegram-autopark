@@ -666,3 +666,34 @@ class AdminLoginToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class OutboundMessage(Base):
+    """Очередь исходящих сообщений в Telegram.
+
+    celery (воркер/beat) не имеет доступа в Telegram — слать может только бот.
+    Поэтому периодические задачи кладут сообщение сюда, а бот одной петлёй
+    `drain_outbox` вычитывает неотправленные и шлёт. `attempts` ограничивает
+    повторы: заблокировавший бота водитель иначе крутил бы очередь вечно.
+    """
+
+    __tablename__ = "outbound_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipient_tg_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    # reminder | warn | block_notice | digest — для наблюдаемости и логов.
+    kind: Mapped[str] = mapped_column(String(32))
+    text: Mapped[str] = mapped_column(Text)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # «Сдались»: постоянная ошибка (бот заблокирован/нет чата) или лимит попыток.
+    # Отдельно от sent_at — чтобы потерянное уведомление было видно, а не выглядело
+    # доставленным.
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

@@ -83,6 +83,15 @@ class AdminDigest(DTO):
     today: date | None = None
 
 
+class OutboundMessageDTO(DTO):
+    """Исходящее сообщение из очереди: бот шлёт получателю и помечает отправленным."""
+
+    id: int
+    recipient_tg_user_id: int
+    kind: str
+    text: str
+
+
 class AssistantQuery(DTO):
     question: str
 

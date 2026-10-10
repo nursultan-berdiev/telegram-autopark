@@ -4,8 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 
-from aiogram import Bot, F, Router
-from aiogram.filters import Command
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
@@ -14,31 +13,14 @@ from app.client import ApiClient, ApiError
 from app.filters import IsAdmin
 from app.keyboards.admin import BTN_SCHEDULES, admin_menu
 from app.keyboards.schedules import drivers_list_kb, period_kb, start_date_kb
-from app.scheduler import send_daily_reminders
 from app.states.schedule import SetSchedule
 
 router = Router(name="schedules")
 router.message.filter(IsAdmin)
 router.callback_query.filter(IsAdmin)
 
-
-@router.message(Command("remind_now"))
-async def remind_now(message: Message, bot: Bot, api: ApiClient) -> None:
-    """Разовая рассылка напоминаний прямо сейчас (не дожидаясь REMINDER_HOUR).
-
-    `/remind_now force` обходит антиспам «раз в день» — нужен для проверки
-    на стенде, когда за сегодня напоминание уже уходило.
-    """
-    force = "force" in (message.text or "").lower()
-    result = await send_daily_reminders(bot, api, force=force)
-    await message.answer(
-        "Рассылка выполнена.\n"
-        f"Напоминаний водителям: {result['drivers']}\n"
-        f"Сводок владельцу: {result['owners']}\n\n"
-        "Если ноль — значит сегодня напоминать некому "
-        "(нет активных графиков со сроком сегодня/завтра или просрочкой), "
-        "либо водителям уже писали сегодня."
-    )
+# Ручной запуск рассылки (/remind_now) убран: напоминания теперь celery-beat
+# задача, разовый прогон — кнопкой «Проверить сейчас» в веб-админке.
 
 
 def _today_utc() -> datetime:
