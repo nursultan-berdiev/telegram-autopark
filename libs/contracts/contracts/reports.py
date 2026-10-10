@@ -63,6 +63,26 @@ class ReminderMark(DTO):
     on_date: date | None = None
 
 
+class DriverNotice(DTO):
+    """Одно сообщение водителю (предупреждение о сроке / блок включён)."""
+
+    schedule_id: int
+    tg_user_id: int
+    text: str
+
+
+class DriverNoticePlan(DTO):
+    notices: list[DriverNotice] = []
+    today: date | None = None
+
+
+class AdminDigest(DTO):
+    """Готовый текст сводки владельцу (кто оплатил/нет, автоблокировки)."""
+
+    text: str | None = None
+    today: date | None = None
+
+
 class AssistantQuery(DTO):
     question: str
 

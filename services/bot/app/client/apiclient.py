@@ -268,10 +268,49 @@ class ApiClient:
         self, schedule_ids: list[int], on_date: date | None = None
     ) -> None:
         """Дату по умолчанию ставит сервер — у него и живёт таймзона парка."""
+        await self._mark_notice("/reminders/mark", schedule_ids, on_date)
+
+    async def reminders_overdue_warning(
+        self, now: datetime | None = None, *, force: bool = False
+    ) -> dict:
+        return await self._notice_plan("/reminders/overdue-warning", now, force=force)
+
+    async def reminders_block_notice(
+        self, now: datetime | None = None, *, force: bool = False
+    ) -> dict:
+        return await self._notice_plan("/reminders/block-notice", now, force=force)
+
+    async def reminders_admin_digest(self, now: datetime | None = None) -> dict:
+        params: dict = {"now": now} if now is not None else {}
+        return await self._request("GET", "/reminders/admin-digest", params=params or None)
+
+    async def reminders_mark_warning(
+        self, schedule_ids: list[int], on_date: date | None = None
+    ) -> None:
+        await self._mark_notice("/reminders/mark-warning", schedule_ids, on_date)
+
+    async def reminders_mark_block_notice(
+        self, schedule_ids: list[int], on_date: date | None = None
+    ) -> None:
+        await self._mark_notice("/reminders/mark-block-notice", schedule_ids, on_date)
+
+    async def _notice_plan(
+        self, path: str, now: datetime | None, *, force: bool
+    ) -> dict:
+        params: dict = {}
+        if now is not None:
+            params["now"] = now
+        if force:
+            params["force"] = 1
+        return await self._request("GET", path, params=params or None)
+
+    async def _mark_notice(
+        self, path: str, schedule_ids: list[int], on_date: date | None
+    ) -> None:
         payload: dict = {"schedule_ids": schedule_ids}
         if on_date is not None:
             payload["on_date"] = on_date
-        await self._request("POST", "/reminders/mark", json=payload)
+        await self._request("POST", path, json=payload)
 
     # --- Телеметрия и трекеры ------------------------------------------------
     async def car_state(self, car_id: int) -> dict:

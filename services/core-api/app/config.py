@@ -86,6 +86,10 @@ class Settings(BaseSettings):
     files_dir: Path = Field(default=Path("./storage"), alias="FILES_DIR")
     timezone: str = Field(default="Asia/Bishkek", alias="TZ")
     reminder_hour: int = Field(default=9, alias="REMINDER_HOUR")
+    # Окно «предупредить до срока»: водитель, у кого платёж не внесён и срок
+    # наступит в ближайшие N минут, получает предупреждение о скорой блокировке.
+    # 20 (а не 15) — запас под крон бота 21:45 при сроке 22:00.
+    warn_lead_minutes: int = Field(default=20, alias="WARN_LEAD_MINUTES")
 
     # TTL приглашения считает сервер: он же их создаёт и валидирует.
     invite_ttl_hours: int = Field(default=24, alias="INVITE_TTL_HOURS")

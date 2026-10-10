@@ -4,8 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Car, Driver, Payment, PaymentStatus
@@ -104,3 +105,38 @@ async def list_recent(
         .limit(limit)
     )
     return [(payment, plate, name) for payment, plate, name in rows.all()]
+
+
+async def paid_today(
+    session: AsyncSession, tz: str, *, now: datetime | None = None
+) -> list[tuple[int, str | None, str | None, float]]:
+    """Оплаты за текущие локальные сутки, свёрнутые по водителю.
+
+    Возвращает (driver_id, имя, номер машины, сумма за день). Граница суток —
+    по часовому поясу парка (в отличие от `list_recent`, который считает окно
+    часов от now в UTC): для сводки «кто оплатил сегодня» нужен именно день.
+    `now` передаётся из сводки, чтобы все её части считались от одного момента;
+    по умолчанию — текущее время.
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    now_local = now.astimezone(ZoneInfo(tz))
+    midnight_local = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    since = midnight_local.astimezone(timezone.utc)
+    rows = await session.execute(
+        select(
+            Driver.id,
+            Driver.full_name,
+            Car.plate,
+            func.coalesce(func.sum(Payment.amount), 0),
+        )
+        .join(Driver, Driver.id == Payment.driver_id)
+        .join(Car, Car.id == Payment.car_id, isouter=True)
+        .where(
+            Payment.created_at >= since,
+            Payment.status == PaymentStatus.confirmed,
+        )
+        .group_by(Driver.id, Driver.full_name, Car.plate)
+        .order_by(Driver.full_name)
+    )
+    return [(did, name, plate, float(total)) for did, name, plate, total in rows.all()]
