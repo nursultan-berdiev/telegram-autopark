@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from app.db.models import Car, Driver, PaymentSchedule, SchedulePeriod
 from app.routers import reminders as reminders_router
+from app.routers import reports as reports_router
 
 # Четверг: в воскресенье водителю не напоминают, и тест на реальных часах
 # падал бы раз в неделю.
@@ -121,9 +122,16 @@ async def test_payment_and_schedule_land_in_one_transaction(client, session, mon
     assert count == 0, "платёж без обновления графика сохраняться не должен"
 
 
-async def test_upcoming_row_carries_overdue_days(client, session):
-    """Клиенту нужен день срока отдельно от просрочки — иначе отчёт врёт."""
-    car, driver = await _driver_with_schedule(session, plate="01KG606CCC", days_ago=0)
+async def test_upcoming_row_carries_overdue_days(client, session, monkeypatch):
+    """Клиенту нужен день срока отдельно от просрочки — иначе отчёт врёт.
+
+    Замораживаем «сейчас» на будний день: в воскресенье срок переносится на
+    понедельник (выходной парка), и due-today перестаёт быть просрочкой — тест
+    не должен зависеть от дня, когда гоняется CI."""
+    monkeypatch.setattr(reports_router, "datetime", _FrozenDatetime)
+    car, driver = await _driver_with_schedule(
+        session, plate="01KG606CCC", days_ago=0, now=_THURSDAY
+    )
 
     rows = (await client.get("/reports/upcoming")).json()
 

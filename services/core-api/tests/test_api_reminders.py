@@ -7,9 +7,19 @@ from app.db.models import SchedulePeriod
 from app.domain import cars as cars_service
 from app.domain import drivers as drivers_service
 from app.domain import schedules as sched
+from app.routers import reminders as reminders_router
 
 UTC = timezone.utc
-NOW = datetime(2026, 7, 10, 3, tzinfo=UTC)  # срок 05.07 UTC — заведомая просрочка
+NOW = datetime(2026, 7, 10, 3, tzinfo=UTC)  # пятница (будни): срок 05.07 — заведомая просрочка
+
+
+class _FrozenNow(datetime):
+    """Фиксирует «сейчас» на буднях — иначе план в воскресенье (выходной парка)
+    не содержит напоминаний водителю, и тест плавает от дня прогона CI."""
+
+    @classmethod
+    def now(cls, tz=None):
+        return NOW.astimezone(tz) if tz else NOW.replace(tzinfo=None)
 
 
 async def _driver_with_schedule(session, *, next_due, tg_id=1, plate="AA"):
@@ -54,8 +64,12 @@ async def test_plan_returns_overdue_reminder_with_driver_id(client, session):
     assert body["today"] == expected_today
 
 
-async def test_plan_default_now_is_current_time(client, session):
-    """Без ?now= план строится на текущий момент (проверяем, что запрос не падает)."""
+async def test_plan_default_now_is_current_time(client, session, monkeypatch):
+    """Без ?now= план строится на текущий момент (проверяем, что запрос не падает).
+
+    «Сейчас» замораживаем на будний день: в воскресенье водителю не напоминаем
+    (выходной), и `reminders` был бы пуст не из-за бага, а из-за дня прогона."""
+    monkeypatch.setattr(reminders_router, "datetime", _FrozenNow)
     await _driver_with_schedule(session, next_due=datetime(2020, 1, 1, tzinfo=UTC))
     resp = await client.get("/reminders/plan")
     assert resp.status_code == 200

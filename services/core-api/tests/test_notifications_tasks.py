@@ -75,7 +75,11 @@ async def test_block_notice_task_enqueues_overdue(session, monkeypatch):
 
 async def test_warn_task_enqueues_due_soon(session, monkeypatch):
     monkeypatch.setattr(notifications, "session_scope", _scope_over(session))
-    soon = datetime.now(UTC) + timedelta(minutes=10)
+    # «Сейчас» фиксируем на будний день: в воскресенье срок переносится на
+    # понедельник (выходной парка) и окно «за 15 мин» не срабатывает.
+    wednesday = datetime(2026, 7, 8, 12, tzinfo=UTC)
+    monkeypatch.setattr(notifications, "_now", lambda: wednesday)
+    soon = wednesday + timedelta(minutes=10)
     await _driver(session, plate="B", next_due=soon, tg=20)
 
     out = await notifications._run_driver_notice("warn")
