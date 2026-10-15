@@ -55,10 +55,10 @@ class Plan:
     total_debt: float = 0.0
 
     def owner_digest(self) -> str | None:
-        """Сводка владельцу. None — если напоминать не о чем."""
+        """Сводка владельцу. None — только когда активных водителей нет вовсе."""
         if not self.owner_lines:
             return None
-        lines = ["⏰ <b>Платежи на сегодня</b>\n", *self.owner_lines]
+        lines = ["⏰ <b>Платежи — статус по машинам</b>\n", *self.owner_lines]
         if self.total_debt > 0:
             lines.append(f"\nСуммарный долг: {fmt_money(self.total_debt)}")
         return "\n".join(lines)
@@ -112,11 +112,8 @@ async def collect(
         plate = car.plate
         due_local = st.next_due_date.astimezone(tzinfo).date()
 
-        kind = _kind_for(st, due_local, today)
-        if kind is None:
-            continue
-
-        # Сводка владельцу — полная картина за день, независимо от анти-спама.
+        # Полный ростер: строка владельцу по КАЖДОМУ активному водителю, иначе
+        # оплаченный вперёд (срок не наступил) выпадает из сводки целиком.
         # Имя/номер экранируем: бот шлёт с parse_mode=HTML (plan/06), а '<'/'&'
         # в имени водителя иначе обрушат всё сообщение.
         plan.owner_lines.append(
@@ -125,9 +122,11 @@ async def collect(
         if st.is_overdue:
             plan.total_debt += float(st.debt_now)
 
-        if day_off:
+        # Напоминание водителю — сдержанно: только когда есть повод и не чаще
+        # одного раза в локальный день, кроме выходного.
+        kind = _kind_for(st, due_local, today)
+        if kind is None or day_off:
             continue
-        # Водителю — не чаще одного напоминания в локальный день.
         if not force and schedule.last_reminded_on == today:
             continue
 
@@ -297,12 +296,22 @@ async def collect_admin_digest(
     lines.append("")
 
     if overdue:
-        lines.append(f"❌ Не оплатили / просрочено ({len(overdue)}):")
+        lines.append(f"❌ Просрочено ({len(overdue)}):")
         lines += [
             f"• {_esc(it.car_plate)} — {_esc(it.name)}: {it.summary}" for it in overdue
         ]
     else:
-        lines.append("❌ Не оплатили: нет, все оплатили 🎉")
+        lines.append("❌ Просрочек нет 🎉")
+
+    # Полный ростер: кто сегодня не платил и не в просрочке (оплачен вперёд /
+    # срок не наступил). Без этой секции такой водитель исчезал из сводки.
+    paid_ids = {driver_id for driver_id, *_ in paid}
+    no_debt = [it for it in upcoming if not it.is_overdue and it.driver_id not in paid_ids]
+    if no_debt:
+        lines += ["", f"🟢 Без долга / оплачены вперёд ({len(no_debt)}):"]
+        lines += [
+            f"• {_esc(it.car_plate)} — {_esc(it.name)}: {it.summary}" for it in no_debt
+        ]
 
     if blocks:
         lines += ["", f"🔒 Автоблокировка ({len(blocks)}):"]
