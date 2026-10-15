@@ -133,7 +133,7 @@ async def test_admin_digest_buckets(session):
 
     text = await reminders.collect_admin_digest(session, now, "UTC")
     assert "Оплатили сегодня" in text and "A" in text
-    assert "просрочено" in text and "B" in text
+    assert "Просрочено" in text and "B" in text
     assert "Автоблокировка" in text and "C" in text and "за аренду" in text
 
 
@@ -142,7 +142,44 @@ async def test_admin_digest_empty_states(session):
     # Один оплативший вперёд (срок завтра, остаток 0) → не просрочен, без блока.
     await _driver_with_schedule(session, plate="A", next_due=now + timedelta(days=1), paid=1800, tg=1)
     text = await reminders.collect_admin_digest(session, now, "UTC")
-    assert "все оплатили" in text and "Автоблокировок нет" in text
+    assert "Просрочек нет" in text and "Автоблокировок нет" in text
+    # Полный ростер: водитель без долга виден, а не пропадает.
+    assert "Без долга / оплачены вперёд" in text and "A" in text
+
+
+async def test_admin_digest_paid_ahead_driver_not_lost(session):
+    """Оплаченный вперёд (сегодня не платил, не просрочен) попадает в отдельную
+    секцию, а не исчезает из сводки — баг с Бабиржаном 13.10."""
+    now = datetime.now(UTC)
+    await _driver_with_schedule(
+        session, plate="AHEAD", next_due=now + timedelta(days=1), tg=7, full_name="Оплачен Вперёд"
+    )
+    text = await reminders.collect_admin_digest(session, now, "UTC")
+
+    assert "Без долга / оплачены вперёд" in text
+    assert "Оплачен Вперёд" in text and "AHEAD" in text
+    # И его нет ни в «оплатили сегодня», ни в «просрочено».
+    assert "Оплатили сегодня: —" in text
+    assert "Просрочек нет" in text
+
+
+async def test_admin_digest_full_roster_covers_everyone(session):
+    """Каждый активный водитель виден ровно в своей секции — никто не выпадает."""
+    now = datetime.now(UTC)
+    car_p, drv_p, _ = await _driver_with_schedule(session, plate="PAID", next_due=now + timedelta(days=1), tg=1)
+    session.add(Payment(driver_id=drv_p.id, car_id=car_p.id, amount=1800, status=PaymentStatus.confirmed))
+    await _driver_with_schedule(session, plate="OVERDUE", next_due=now - timedelta(days=1), tg=2)
+    await _driver_with_schedule(session, plate="AHEAD", next_due=now + timedelta(days=2), tg=3)
+    await session.commit()
+
+    text = await reminders.collect_admin_digest(session, now, "UTC")
+
+    # Все три машины присутствуют.
+    assert "PAID" in text and "OVERDUE" in text and "AHEAD" in text
+    # И каждая секция на месте.
+    assert "Оплатили сегодня (1)" in text
+    assert "Просрочено (1)" in text
+    assert "Без долга / оплачены вперёд (1)" in text
 
 
 async def test_block_notice_skips_inactive_and_carless(session):

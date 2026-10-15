@@ -59,13 +59,15 @@ async def test_reminds_overdue_with_debt(session):
     assert plan.total_debt > 0
 
 
-async def test_silent_when_due_far_away(session):
-    # срок через неделю — молчим
+async def test_far_away_driver_silent_but_in_owner_digest(session):
+    # срок через неделю — водителя не дёргаем, но у владельца он виден (полный ростер)
     await _driver_with_schedule(session, next_due=datetime(2026, 7, 20, tzinfo=UTC))
     plan = await rem.collect(session, datetime(2026, 7, 10, 3, tzinfo=UTC), TZ)
 
     assert plan.reminders == []
-    assert plan.owner_digest() is None
+    digest = plan.owner_digest()
+    assert digest is not None
+    assert "Водитель 1" in digest and "след. платёж 20.07.2026" in digest
 
 
 async def test_no_double_reminder_same_day(session):
