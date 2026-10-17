@@ -1,5 +1,12 @@
 """Общие DTO HTTP-контрактов: импортируются core-api, ботом и адаптером."""
 from .alerts import AlertDTO, RuleDTO, RuleUpsert
+from .announcements import (
+    ANNOUNCEMENT_MAX_TEXT,
+    AnnouncementCreate,
+    AnnouncementDTO,
+    render_announcement,
+    telegram_length,
+)
 from .cars import CarCreate, CarDTO, CarStateDTO, TrackerDTO, TrackerUpsert
 from .commands import CommandDTO, CommandRequest, CommandResult
 from .common import DTO, Problem, Role
@@ -70,4 +77,6 @@ __all__ = [
     "FineDTO", "FineCreate", "FineImportItem", "FineImportResult",
     "MaintenanceDTO", "MaintenanceUpsert",
     "PeriodicTaskDTO", "PeriodicTaskUpsert", "PeriodicTaskPatch", "TaskRunDTO",
+    "AnnouncementCreate", "AnnouncementDTO",
+    "ANNOUNCEMENT_MAX_TEXT", "render_announcement", "telegram_length",
 ]

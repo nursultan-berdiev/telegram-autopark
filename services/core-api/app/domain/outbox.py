@@ -5,6 +5,7 @@
 `mark_failed`. Постоянная ошибка (бот заблокирован/нет чата) `permanent=True` →
 сразу `failed_at`; временная — счётчик попыток, лимит `MAX_ATTEMPTS` как
 страховка от вечного ретрая. `failed_at ≠ sent_at`: потерянное уведомление видно.
+`cancelled_at` — намеренная отмена (удалили объявление), не сбой доставки.
 At-least-once: отметку делает бот после отправки, поэтому редкий дубль возможен —
 он предпочтён потере платёжного уведомления.
 """
@@ -30,10 +31,18 @@ def _now() -> datetime:
 
 
 async def enqueue(
-    session: AsyncSession, *, recipient_tg_user_id: int, text: str, kind: str
+    session: AsyncSession,
+    *,
+    recipient_tg_user_id: int,
+    text: str,
+    kind: str,
+    announcement_id: int | None = None,
 ) -> OutboundMessage:
     msg = OutboundMessage(
-        recipient_tg_user_id=recipient_tg_user_id, text=text, kind=kind
+        recipient_tg_user_id=recipient_tg_user_id,
+        text=text,
+        kind=kind,
+        announcement_id=announcement_id,
     )
     session.add(msg)
     await session.flush()
@@ -43,17 +52,39 @@ async def enqueue(
 async def list_pending(
     session: AsyncSession, *, limit: int = 100
 ) -> list[OutboundMessage]:
-    """Неотправленные и не «сдавшиеся» — старые первыми (FIFO-доставка)."""
+    """Неотправленные, не «сдавшиеся» и не отменённые — старые первыми (FIFO)."""
     result = await session.scalars(
         select(OutboundMessage)
         .where(
             OutboundMessage.sent_at.is_(None),
             OutboundMessage.failed_at.is_(None),
+            OutboundMessage.cancelled_at.is_(None),
         )
         .order_by(OutboundMessage.created_at)
         .limit(limit)
     )
     return list(result.all())
+
+
+async def cancel_announcement(
+    session: AsyncSession, announcement_id: int, *, now: datetime | None = None
+) -> int:
+    """Снимает неотправленные письма объявления; возвращает их число.
+
+    Письмо, которое бот уже забрал в текущий проход, всё равно уйдёт — тогда
+    mark_sent честно проставит ему sent_at.
+    """
+    result = await session.execute(
+        update(OutboundMessage)
+        .where(
+            OutboundMessage.announcement_id == announcement_id,
+            OutboundMessage.sent_at.is_(None),
+            OutboundMessage.failed_at.is_(None),
+            OutboundMessage.cancelled_at.is_(None),
+        )
+        .values(cancelled_at=now or _now())
+    )
+    return result.rowcount or 0
 
 
 async def mark_sent(session: AsyncSession, message_id: int) -> bool:
@@ -76,7 +107,7 @@ async def mark_failed(
     msg = await session.get(OutboundMessage, message_id)
     if msg is None:
         return False
-    if msg.sent_at is None and msg.failed_at is None:
+    if msg.sent_at is None and msg.failed_at is None and msg.cancelled_at is None:
         # Атомарный инкремент (без read-modify-write гонки нескольких отправителей).
         await session.execute(
             update(OutboundMessage)
