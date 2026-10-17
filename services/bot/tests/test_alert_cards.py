@@ -192,3 +192,16 @@ def test_alert_text_escapes_service_data():
 
     assert "<b>" not in text
     assert "&lt;b&gt;" in text
+
+
+def test_missed_photo_inspection_offers_manual_block():
+    """Авто-блокировки за фотоконтроль нет — решение за админом, кнопкой."""
+    labels = _labels(_alert("photo_inspection_overdue"))
+
+    assert labels == ["Заблокировать двигатель", "Отложить"]
+
+
+def test_photo_auto_block_card_offers_unblock():
+    labels = _labels(_alert("photo_block_fired"))
+
+    assert "Разблокировать двигатель" in labels

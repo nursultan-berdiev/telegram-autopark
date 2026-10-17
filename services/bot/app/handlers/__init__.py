@@ -16,6 +16,7 @@ from app.handlers import (
     fleet,
     new_driver,
     payments,
+    photo,
     registration,
     reports,
     schedules,
@@ -48,6 +49,7 @@ def get_main_router() -> Router:
     router.include_router(fines.router)
     router.include_router(announcements.router)
     router.include_router(documents.router)
+    router.include_router(photo.router)
     router.include_router(schedules.router)
     router.include_router(payments.router)
     router.include_router(reports.router)

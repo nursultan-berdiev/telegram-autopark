@@ -514,6 +514,9 @@ async def fire_armed(
                         f"{plate}: превышен лимит неоплаченных штрафов — "
                         "двигатель заблокирован"
                     )
+                elif command.source == CommandSource.photo:
+                    atype = AlertType.photo_block_fired
+                    text = f"{plate}: не пройден фотоконтроль — двигатель заблокирован"
                 else:
                     atype = AlertType.armed_block_fired
                     text = (

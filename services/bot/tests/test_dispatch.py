@@ -263,3 +263,32 @@ async def test_documents_closed_for_guest(dispatcher, shared_api, bot_with_fake_
     )
 
     assert shared_api.called("common_documents") == []
+
+
+async def test_photo_button_reaches_driver(dispatcher, shared_api, bot_with_fake_session):
+    """Кнопка из меню водителя доходит до его статуса фотоконтроля."""
+    shared_api.set("me", DRIVER_ME)
+    shared_api.set(
+        "driver_photo_status",
+        {
+            "driver_id": 1, "driver_name": "Тест Водитель", "car_id": 1,
+            "car_plate": "01KG001AAA", "next_due_on": "2099-01-01", "overdue_days": 0,
+        },
+    )
+
+    texts = await _feed(
+        dispatcher, bot_with_fake_session, _message(DRIVER_ID, "📸 Фотоконтроль"), shared_api
+    )
+
+    assert texts and "Фотоконтроль машины 01KG001AAA" in texts[0]
+
+
+async def test_photo_closed_for_guest(dispatcher, shared_api, bot_with_fake_session):
+    shared_api.set("me", GUEST_ME)
+
+    await _feed(
+        dispatcher, bot_with_fake_session, _message(GUEST_ID, "📸 Фотоконтроль"), shared_api
+    )
+
+    assert shared_api.called("driver_photo_status") == []
+    assert shared_api.called("photo_statuses") == []

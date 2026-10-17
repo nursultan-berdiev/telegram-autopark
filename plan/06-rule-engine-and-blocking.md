@@ -152,3 +152,24 @@ rule.engine → alert(open)
   предупреждение (сценарий «нет реле, а S20,OK пришёл»).
 - Поток команды: мок adapter-клиента; проверка записи `commands`, `alert.action_taken` и факта
   уведомления водителя.
+
+## Фотоконтроль: алерт сейчас, авто-блокировка — задел (2026-10)
+
+Водитель раз в `PHOTO_INSPECTION_INTERVAL_DAYS` (7) сдаёт 4 фото машины и отчёт
+(`app/domain/photo_inspections.py`). Ежедневная задача celery-beat
+`app.tasks.photo_inspections.notify_photo_inspections` шлёт напоминания через outbox и
+держит системный алерт `photo_inspection_overdue`. Карточка алерта предлагает ручную
+блокировку (как у правил), сдача осмотра закрывает алерт.
+
+Авто-блокировка за пропуск **написана, но не включена** (решение владельца):
+`engine_enforcement.photo_policy(n)` — блок при просрочке ≥ N дней на общем ядре
+(`source=photo`, свои типы алертов `photo_block_fired/photo_unblock/photo_unblock_failed`,
+ветка в `fire_armed`), обёртка `app/tasks/photo_enforcement.py`. Чтобы включить:
+1. добавить `app.tasks.photo_enforcement` в `celery_app.include`;
+2. внести `app.tasks.photo_enforcement.enforce_photo_inspections` в `KNOWN_TASKS`;
+3. завести строку `periodic_tasks` (дата-миграцией, как 0022) с `args.min_overdue_days` (≥ 1);
+4. выставить `PHOTO_AUTOBLOCK_ENABLED=1` — без него задача ничего не делает, даже
+   если её подключат к воркеру по ошибке (`/periodic-tasks` имя задачи не сверяет).
+
+Тест `test_reminder_task_is_schedulable_but_photo_block_is_not` держит задачу выключенной —
+включение начинается с его осознанной правки.
