@@ -83,3 +83,11 @@ class FleetCB(CallbackData, prefix="flt"):
     action: str  # state | tracker | tracker_set | fines | fine_add | maint | maint_set | maint_done
     car_id: int = 0
     obj_id: int = 0
+
+
+class AnnouncementCB(CallbackData, prefix="ann"):
+    """Объявления: страницы истории, карточка, публикация и удаление."""
+
+    action: str  # page | card | new | send | cancel | delete | delete_confirm
+    ann_id: int = 0
+    page: int = 0

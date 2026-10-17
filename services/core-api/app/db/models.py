@@ -681,9 +681,13 @@ class OutboundMessage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     recipient_tg_user_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    # reminder | warn | block_notice | digest — для наблюдаемости и логов.
+    # reminder | warn | block_notice | digest | announcement — для наблюдаемости и логов.
     kind: Mapped[str] = mapped_column(String(32))
     text: Mapped[str] = mapped_column(Text)
+    # Чьё это письмо: удаление объявления снимает его ещё не ушедшую рассылку.
+    announcement_id: Mapped[int | None] = mapped_column(
+        ForeignKey("announcements.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
@@ -695,5 +699,32 @@ class OutboundMessage(Base):
     # Отдельно от sent_at — чтобы потерянное уведомление было видно, а не выглядело
     # доставленным.
     failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Намеренная отмена (удалили объявление) — отдельно от failed_at, чтобы в очереди
+    # не путать её со сбоем доставки.
+    cancelled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class Announcement(Base):
+    """Объявление парка: рассылается всем водителям и остаётся в истории.
+
+    Удаление мягкое: ошибочное объявление пропадает из истории, но что и кому
+    уже разослали, остаётся видно.
+    """
+
+    __tablename__ = "announcements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    text: Mapped[str] = mapped_column(Text)
+    created_by: Mapped[int] = mapped_column(BigInteger)  # tg id админа
+    # Сколько водителей попало в рассылку в момент публикации.
+    recipients: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

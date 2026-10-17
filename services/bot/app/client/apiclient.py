@@ -253,6 +253,23 @@ class ApiClient:
     async def assistant_query(self, question: str) -> dict:
         return await self._request("POST", "/assistant/query", json={"question": question})
 
+    # --- Объявления ----------------------------------------------------------
+    async def announcements(self, limit: int = 50) -> list[dict]:
+        return await self._request("GET", "/announcements", params={"limit": limit})
+
+    async def announcement(self, announcement_id: int) -> dict:
+        return await self._request("GET", f"/announcements/{announcement_id}")
+
+    async def publish_announcement(self, *, text: str, tg_id: int) -> dict:
+        return await self._actor_request(
+            "POST", "/announcements", json={"text": text}, tg_id=tg_id
+        )
+
+    async def delete_announcement(self, announcement_id: int, *, tg_id: int) -> None:
+        await self._actor_request(
+            "DELETE", f"/announcements/{announcement_id}", tg_id=tg_id
+        )
+
     # --- Очередь исходящих (бот шлёт, core-api/celery пишут) ------------------
     async def outbox_pending(self) -> list[dict]:
         """Неотправленные сообщения из очереди (recipient_tg_user_id, text, kind)."""
