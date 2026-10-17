@@ -39,6 +39,7 @@ KNOWN_TASKS = {
     "app.tasks.notifications.notify_overdue_warning": "Предупреждение водителю за 15 мин до срока",
     "app.tasks.notifications.notify_block_notice": "Уведомление водителю: блокировка включена (22:00)",
     "app.tasks.notifications.notify_admin_digest": "Админ-дайджест по платежам (22:05)",
+    "app.tasks.photo_inspections.notify_photo_inspections": "Фотоконтроль: напоминания водителям и алерт о просрочке",
     "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
 }
 

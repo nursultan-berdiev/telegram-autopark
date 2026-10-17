@@ -86,6 +86,18 @@ ADMIN_CALLS = [
         ),
     ),
     ("delete_document", lambda api: api.delete_document(1, tg_id=ACTOR)),
+    # Не админский вызов, но актор обязателен так же: по нему core-api находит водителя.
+    (
+        "submit_photo_inspection",
+        lambda api: api.submit_photo_inspection(
+            tg_id=ACTOR,
+            front_file_id="F",
+            rear_file_id="R",
+            interior_front_file_id="IF",
+            interior_rear_file_id="IR",
+            has_issues=False,
+        ),
+    ),
 ]
 
 

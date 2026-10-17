@@ -102,3 +102,11 @@ class DocCB(CallbackData, prefix="doc"):
     action: str  # owners | list | open | add | delete | delete_confirm | delete_cancel
     car_id: int = 0
     doc_id: int = 0
+
+
+class PhotoCB(CallbackData, prefix="ph"):
+    """Фотоконтроль: сдача водителем и просмотр осмотров админом."""
+
+    action: str  # start | ok | issues | drivers | driver | open
+    driver_id: int = 0
+    insp_id: int = 0

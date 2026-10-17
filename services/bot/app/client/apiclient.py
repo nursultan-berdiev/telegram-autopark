@@ -308,6 +308,47 @@ class ApiClient:
     async def delete_document(self, document_id: int, *, tg_id: int) -> None:
         await self._actor_request("DELETE", f"/documents/{document_id}", tg_id=tg_id)
 
+    # --- Фотоконтроль --------------------------------------------------------
+    async def submit_photo_inspection(
+        self,
+        *,
+        tg_id: int,
+        front_file_id: str,
+        rear_file_id: str,
+        interior_front_file_id: str,
+        interior_rear_file_id: str,
+        has_issues: bool,
+        comment: str | None = None,
+    ) -> dict:
+        # Актор — сам водитель: core-api по нему находит водителя и его машину.
+        return await self._actor_request(
+            "POST",
+            "/photo-inspections",
+            json={
+                "front_file_id": front_file_id,
+                "rear_file_id": rear_file_id,
+                "interior_front_file_id": interior_front_file_id,
+                "interior_rear_file_id": interior_rear_file_id,
+                "has_issues": has_issues,
+                "comment": comment,
+            },
+            tg_id=tg_id,
+        )
+
+    async def photo_statuses(self) -> list[dict]:
+        return await self._request("GET", "/photo-inspections/status")
+
+    async def driver_photo_status(self, driver_id: int) -> dict:
+        return await self._request("GET", f"/drivers/{driver_id}/photo-status")
+
+    async def photo_inspections(self, driver_id: int, limit: int = 10) -> list[dict]:
+        return await self._request(
+            "GET", f"/drivers/{driver_id}/photo-inspections", params={"limit": limit}
+        )
+
+    async def photo_inspection(self, inspection_id: int) -> dict:
+        return await self._request("GET", f"/photo-inspections/{inspection_id}")
+
     # --- Очередь исходящих (бот шлёт, core-api/celery пишут) ------------------
     async def outbox_pending(self) -> list[dict]:
         """Неотправленные сообщения из очереди (recipient_tg_user_id, text, kind)."""

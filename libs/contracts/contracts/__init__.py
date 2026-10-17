@@ -44,6 +44,13 @@ from .payments import (
     PaymentResult,
     RecognizedReceiptDTO,
 )
+from .photo import (
+    PHOTO_COMMENT_MAX,
+    PhotoInspectionCreate,
+    PhotoInspectionDTO,
+    PhotoInspectionResult,
+    PhotoStatusDTO,
+)
 from .reports import (
     AdminDigest,
     AssistantAnswer,
@@ -88,4 +95,6 @@ __all__ = [
     "ANNOUNCEMENT_MAX_TEXT", "render_announcement", "telegram_length",
     "DocumentCreate", "DocumentDTO", "DOCUMENT_MAX_TITLE",
     "DOCUMENT_MAX_FILE_NAME", "DOCUMENT_MAX_FILE_ID",
+    "PhotoInspectionCreate", "PhotoInspectionDTO", "PhotoInspectionResult", "PhotoStatusDTO",
+    "PHOTO_COMMENT_MAX",
 ]
