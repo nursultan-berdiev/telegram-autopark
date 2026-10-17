@@ -7,6 +7,7 @@ from app.handlers import (
     admin_web,
     ai_query,
     alerts,
+    announcements,
     cars,
     common,
     drivers,
@@ -44,6 +45,7 @@ def get_main_router() -> Router:
     router.include_router(cars.router)
     router.include_router(fleet.router)
     router.include_router(fines.router)
+    router.include_router(announcements.router)
     router.include_router(schedules.router)
     router.include_router(payments.router)
     router.include_router(reports.router)

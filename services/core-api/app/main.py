@@ -15,6 +15,7 @@ from app.jobs import start_jobs
 from app.logger import setup_logging
 from app.routers import (
     alerts,
+    announcements,
     assistant,
     cars,
     commands,
@@ -98,6 +99,7 @@ app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
 app.include_router(periodic.router, tags=["periodic"])
 app.include_router(outbox.router, tags=["outbox"])
+app.include_router(announcements.router, tags=["announcements"])
 app.include_router(admin.router, tags=["admin"])
 
 # MCP-сервер ИИ-ассистента (read-only). Монтируем только при включённой фиче и
