@@ -21,12 +21,17 @@ from app.notify import (
     DRIVER_FINES_UNBLOCKED_TEXT,
     DRIVER_OVERDUE_BLOCKED_TEXT,
     DRIVER_OVERDUE_UNBLOCKED_TEXT,
+    DRIVER_PHOTO_BLOCKED_TEXT,
+    DRIVER_PHOTO_UNBLOCKED_TEXT,
     notify_driver,
 )
 
 log = logging.getLogger(__name__)
 
 RULE_TYPES = {"overdue_payment", "fines_count", "maintenance_km"}
+# Нарушения, по которым админ сам решает, глушить ли машину: правила и пропуск
+# фотоконтроля (авто-блокировки за него нет — только кнопка).
+BLOCKABLE_TYPES = RULE_TYPES | {"photo_inspection_overdue"}
 # Типы алертов, при доставке которых надо уведомить ещё и водителя — и каким текстом.
 DRIVER_NOTIFY_TEXT = {
     "armed_block_fired": DRIVER_BLOCKED_TEXT,
@@ -34,9 +39,14 @@ DRIVER_NOTIFY_TEXT = {
     "overdue_unblock": DRIVER_OVERDUE_UNBLOCKED_TEXT,
     "fines_block_fired": DRIVER_FINES_BLOCKED_TEXT,
     "fines_unblock": DRIVER_FINES_UNBLOCKED_TEXT,
+    "photo_block_fired": DRIVER_PHOTO_BLOCKED_TEXT,
+    "photo_unblock": DRIVER_PHOTO_UNBLOCKED_TEXT,
 }
-# Карточки с кнопкой «Разблокировать»: авто-сработавший блок (взвод, аренда, штрафы).
-UNBLOCK_CARD_TYPES = {"armed_block_fired", "overdue_block_fired", "fines_block_fired"}
+# Карточки с кнопкой «Разблокировать»: авто-сработавший блок (взвод, аренда, штрафы,
+# фотоконтроль — последний пока не включён).
+UNBLOCK_CARD_TYPES = {
+    "armed_block_fired", "overdue_block_fired", "fines_block_fired", "photo_block_fired",
+}
 
 _SEVERITY_MARK = {"info": "•", "warning": "!", "critical": "!!"}
 
@@ -57,7 +67,7 @@ def alert_keyboard(alert: dict) -> InlineKeyboardMarkup:
     car_id = int(alert["car_id"])
     atype = alert.get("type", "")
 
-    if atype in RULE_TYPES:
+    if atype in BLOCKABLE_TYPES:
         rows = [
             [
                 InlineKeyboardButton(

@@ -91,6 +91,15 @@ class Settings(BaseSettings):
     # 20 (а не 15) — запас под крон бота 21:45 при сроке 22:00.
     warn_lead_minutes: int = Field(default=20, alias="WARN_LEAD_MINUTES")
 
+    # Фотоконтроль: водитель сдаёт 4 фото машины раз в N дней (одна периодичность
+    # на парк); следующий срок отсчитывается от дня сдачи.
+    photo_inspection_interval_days: int = Field(
+        default=7, alias="PHOTO_INSPECTION_INTERVAL_DAYS"
+    )
+    # Выключатель авто-блокировки за пропуск фотоконтроля (задел, решение владельца).
+    # Проверяется в самой задаче: случайное подключение модуля к воркеру её не включит.
+    photo_autoblock_enabled: bool = Field(default=False, alias="PHOTO_AUTOBLOCK_ENABLED")
+
     # TTL приглашения считает сервер: он же их создаёт и валидирует.
     invite_ttl_hours: int = Field(default=24, alias="INVITE_TTL_HOURS")
     invite_ttl_minutes: int = Field(default=0, alias="INVITE_TTL_MINUTES")

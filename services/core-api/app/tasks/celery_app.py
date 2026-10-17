@@ -21,6 +21,9 @@ celery_app = Celery(
         "app.tasks.payments_unblock",
         "app.tasks.fines_enforcement",
         "app.tasks.notifications",
+        "app.tasks.photo_inspections",
+        # app.tasks.photo_enforcement — намеренно нет: блокировка за фотоконтроль
+        # включается отдельным решением владельца.
     ],
 )
 

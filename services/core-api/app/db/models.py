@@ -23,6 +23,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
     text,
 )
@@ -426,6 +427,11 @@ class AlertType(str, enum.Enum):
     fines_block_fired = "fines_block_fired"  # авто-блокировка за штрафы сработала
     fines_unblock = "fines_unblock"  # штрафы погашены — двигатель авто-разблокирован
     fines_unblock_failed = "fines_unblock_failed"  # авто-разблокировку (штрафы) не удалось отправить
+    photo_inspection_overdue = "photo_inspection_overdue"  # водитель пропустил фотоконтроль
+    # Задел авто-блокировки за пропуск фотоконтроля (задача не включена, см. photo_enforcement).
+    photo_block_fired = "photo_block_fired"
+    photo_unblock = "photo_unblock"
+    photo_unblock_failed = "photo_unblock_failed"
 
 
 class AlertStatus(str, enum.Enum):
@@ -458,6 +464,7 @@ class CommandSource(str, enum.Enum):
     manual = "manual"  # админ
     overdue = "overdue"  # авто-блокировка за неоплату аренды
     fines = "fines"  # авто-блокировка за неоплаченные штрафы
+    photo = "photo"  # авто-блокировка за пропуск фотоконтроля (задел, не включена)
 
 
 class Rule(Base):
@@ -696,4 +703,55 @@ class OutboundMessage(Base):
     # доставленным.
     failed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+# --- Фотоконтроль состояния машины (миграция 0026) -------------------------
+
+
+class PhotoSchedule(Base):
+    """Срок очередного фотоконтроля водителя — по образцу графика платежей.
+
+    Срок хранится, а не вычисляется из последней сдачи: иначе у водителя без
+    единой сдачи (запуск фичи, наём) просрочка считалась бы с даты найма.
+    """
+
+    __tablename__ = "photo_schedules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    driver_id: Mapped[int] = mapped_column(
+        ForeignKey("drivers.id", ondelete="CASCADE"), unique=True
+    )
+    # Локальная дата парка: сдать нужно до конца этого дня.
+    next_due_on: Mapped[date] = mapped_column(Date)
+    # Антиспам «раз в день», как у напоминаний о платеже.
+    last_reminded_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PhotoInspection(Base):
+    """Сданный фотоконтроль: четыре ракурса и отчёт водителя о состоянии.
+
+    Фото — Telegram file_id, как у фото машин и чеков.
+    """
+
+    __tablename__ = "photo_inspections"
+    __table_args__ = (Index("ix_photo_inspections_driver_created", "driver_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id", ondelete="CASCADE"))
+    # SET NULL: история осмотров переживает удаление машины, как платежи.
+    car_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cars.id", ondelete="SET NULL"), nullable=True
+    )
+    front_file_id: Mapped[str] = mapped_column(String(256))
+    rear_file_id: Mapped[str] = mapped_column(String(256))
+    interior_front_file_id: Mapped[str] = mapped_column(String(256))
+    interior_rear_file_id: Mapped[str] = mapped_column(String(256))
+    has_issues: Mapped[bool] = mapped_column(default=False, server_default=false())
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
     )

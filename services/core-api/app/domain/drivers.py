@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models import Car, CarStatus, Driver, Payment, PaymentSchedule
+from app.domain import photo_inspections as photo_domain
 
 
 def _now() -> datetime:
@@ -96,6 +97,11 @@ async def register_driver(
     car = await session.get(Car, car_id)
     if car is not None:
         car.status = CarStatus.occupied
+
+    await session.flush()  # нужен driver.id для графика фотоконтроля
+    # Наём (и повторный) начинает фотоконтроль заново: иначе вернувшийся водитель
+    # получил бы просрочку по сроку из прошлой работы.
+    await photo_domain.restart_schedule(session, driver.id, photo_domain.local_today(_now()))
 
     # commit=False — когда регистрация и гашение инвайта идут одной транзакцией.
     if commit:

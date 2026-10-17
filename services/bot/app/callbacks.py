@@ -83,3 +83,11 @@ class FleetCB(CallbackData, prefix="flt"):
     action: str  # state | tracker | tracker_set | fines | fine_add | maint | maint_set | maint_done
     car_id: int = 0
     obj_id: int = 0
+
+
+class PhotoCB(CallbackData, prefix="ph"):
+    """Фотоконтроль: сдача водителем и просмотр осмотров админом."""
+
+    action: str  # start | ok | issues | drivers | driver | open
+    driver_id: int = 0
+    insp_id: int = 0
