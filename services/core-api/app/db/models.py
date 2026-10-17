@@ -697,3 +697,29 @@ class OutboundMessage(Base):
     failed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+class Document(Base):
+    """Документ машины (ОСАГО, страховка, техпаспорт…) или общий документ парка.
+
+    Файл живёт в Telegram и пересылается по file_id, как фото машин и чеки:
+    байтов у нас нет, поэтому и предела загрузки Bot API (20 МБ) нет.
+    """
+
+    __tablename__ = "documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # NULL — общий документ парка, его видят все водители.
+    car_id: Mapped[int | None] = mapped_column(
+        ForeignKey("cars.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(128))
+    file_id: Mapped[str] = mapped_column(String(256))
+    # "photo" | "document": file_id документа через send_photo Telegram не примет.
+    file_kind: Mapped[str] = mapped_column(String(16))
+    file_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    file_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_by: Mapped[int] = mapped_column(BigInteger)  # tg id админа
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

@@ -253,6 +253,44 @@ class ApiClient:
     async def assistant_query(self, question: str) -> dict:
         return await self._request("POST", "/assistant/query", json={"question": question})
 
+    # --- Документы -----------------------------------------------------------
+    async def car_documents(self, car_id: int) -> list[dict]:
+        return await self._request("GET", f"/cars/{car_id}/documents")
+
+    async def common_documents(self) -> list[dict]:
+        return await self._request("GET", "/documents/common")
+
+    async def document(self, document_id: int) -> dict:
+        return await self._request("GET", f"/documents/{document_id}")
+
+    async def add_document(
+        self,
+        *,
+        tg_id: int,
+        car_id: int | None,
+        title: str,
+        file_id: str,
+        file_kind: str,
+        file_name: str | None = None,
+        file_size: int | None = None,
+    ) -> dict:
+        return await self._actor_request(
+            "POST",
+            "/documents",
+            json={
+                "car_id": car_id,
+                "title": title,
+                "file_id": file_id,
+                "file_kind": file_kind,
+                "file_name": file_name,
+                "file_size": file_size,
+            },
+            tg_id=tg_id,
+        )
+
+    async def delete_document(self, document_id: int, *, tg_id: int) -> None:
+        await self._actor_request("DELETE", f"/documents/{document_id}", tg_id=tg_id)
+
     # --- Очередь исходящих (бот шлёт, core-api/celery пишут) ------------------
     async def outbox_pending(self) -> list[dict]:
         """Неотправленные сообщения из очереди (recipient_tg_user_id, text, kind)."""
