@@ -7,7 +7,7 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.callbacks import CarCB, FleetCB
+from app.callbacks import CarCB, DocCB, FleetCB
 
 BTN_ADD_CAR = "➕ Добавить машину"
 
@@ -40,6 +40,7 @@ def car_detail_kb(car: dict) -> InlineKeyboardMarkup:
     builder.button(text="📡 Трекер", callback_data=FleetCB(action="tracker", car_id=car_id))
     builder.button(text="🧾 Штрафы", callback_data=FleetCB(action="fines", car_id=car_id))
     builder.button(text="🔧 ТО", callback_data=FleetCB(action="maint", car_id=car_id))
+    builder.button(text="📄 Документы", callback_data=DocCB(action="list", car_id=car_id))
     builder.button(text="🗑 Удалить", callback_data=CarCB(action="delete", car_id=car_id))
     builder.button(text="⬅️ К списку", callback_data=CarCB(action="view", car_id=0))
     builder.adjust(2)

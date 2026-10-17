@@ -79,6 +79,13 @@ ADMIN_CALLS = [
         lambda api: api.publish_announcement(text="Новые правила", tg_id=ACTOR),
     ),
     ("delete_announcement", lambda api: api.delete_announcement(1, tg_id=ACTOR)),
+    (
+        "add_document",
+        lambda api: api.add_document(
+            tg_id=ACTOR, car_id=1, title="ОСАГО", file_id="BQAC", file_kind="document"
+        ),
+    ),
+    ("delete_document", lambda api: api.delete_document(1, tg_id=ACTOR)),
 ]
 
 
