@@ -74,6 +74,11 @@ ADMIN_CALLS = [
     ("fleet_fines", lambda api: api.fleet_fines(tg_id=ACTOR)),
     ("check_fines", lambda api: api.check_fines(tg_id=ACTOR)),
     ("admin_login_link", lambda api: api.admin_login_link(tg_id=ACTOR)),
+    (
+        "publish_announcement",
+        lambda api: api.publish_announcement(text="Новые правила", tg_id=ACTOR),
+    ),
+    ("delete_announcement", lambda api: api.delete_announcement(1, tg_id=ACTOR)),
 ]
 
 
