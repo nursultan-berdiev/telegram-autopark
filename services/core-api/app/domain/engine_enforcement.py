@@ -3,7 +3,8 @@
 Механика — взвод, выбор «последней значимой команды», advisory-lock, атомарное
 снятие — источник-агностична и параметризуется `source: CommandSource` плюс
 политикой (`Policy`): предикат условия + типы/тексты алертов. Политики:
-`OVERDUE` (неоплата аренды) и `fines_policy(n)` (неоплаченные штрафы > N).
+`OVERDUE` (неоплата аренды), `fines_policy(n)` (неоплаченные штрафы > N) и задел
+`photo_policy(n)` (фотоконтроль просрочен на ≥ N дней; задача не включена).
 
 Системная команда помечается своим `commands.source` (а не `requested_by IS NULL`):
 по нему авто-разблокировка снимает ТОЛЬКО блок своего источника и не трогает ни
@@ -38,6 +39,7 @@ from app.db.models import (
 from app.domain import alerts as alerts_domain
 from app.domain import commands as commands_domain
 from app.domain import fines as fines_domain
+from app.domain import photo_inspections as photo_domain
 from app.domain import schedules as sched_domain
 
 log = logging.getLogger(__name__)
@@ -349,4 +351,26 @@ def fines_policy(threshold: int) -> Policy:
         failed_atype=AlertType.fines_unblock_failed,
         unblock_text="{plate}: штрафы погашены — двигатель разблокирован",
         failed_text="{plate}: штрафы погашены, но авто-разблокировка не прошла — {reason}",
+    )
+
+
+# --- политика «пропуск фотоконтроля» (задел, не включена) -------------------
+
+
+def photo_policy(min_overdue_days: int) -> Policy:
+    """Блок, если фотоконтроль просрочен на ≥ N дней. Задача-обёртка
+    `app.tasks.photo_enforcement` не подключена к celery — включение отдельным решением."""
+
+    async def applies(session: AsyncSession, car_id: int, now: datetime) -> bool | None:
+        days = await photo_domain.car_overdue_days(session, car_id, now)
+        return None if days is None else days >= min_overdue_days
+
+    return Policy(
+        source=CommandSource.photo,
+        applies=applies,
+        fired_atype=AlertType.photo_block_fired,
+        unblock_atype=AlertType.photo_unblock,
+        failed_atype=AlertType.photo_unblock_failed,
+        unblock_text="{plate}: фотоконтроль пройден — двигатель разблокирован",
+        failed_text="{plate}: фотоконтроль пройден, но авто-разблокировка не прошла — {reason}",
     )

@@ -5,6 +5,7 @@ from aiogram.types import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
 from app.callbacks import PaymentCB
+from app.keyboards.photo import BTN_PHOTO
 
 BTN_PAY = "💳 Оплатить"
 BTN_MY_SCHEDULE = "📅 Мой график"
@@ -16,7 +17,8 @@ def driver_menu() -> ReplyKeyboardMarkup:
     builder.button(text=BTN_PAY)
     builder.button(text=BTN_MY_SCHEDULE)
     builder.button(text=BTN_MY_FINES)
-    builder.adjust(2, 1)
+    builder.button(text=BTN_PHOTO)
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)
 
 

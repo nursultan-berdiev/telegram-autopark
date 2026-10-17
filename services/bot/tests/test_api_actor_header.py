@@ -74,6 +74,18 @@ ADMIN_CALLS = [
     ("fleet_fines", lambda api: api.fleet_fines(tg_id=ACTOR)),
     ("check_fines", lambda api: api.check_fines(tg_id=ACTOR)),
     ("admin_login_link", lambda api: api.admin_login_link(tg_id=ACTOR)),
+    # Не админский вызов, но актор обязателен так же: по нему core-api находит водителя.
+    (
+        "submit_photo_inspection",
+        lambda api: api.submit_photo_inspection(
+            tg_id=ACTOR,
+            front_file_id="F",
+            rear_file_id="R",
+            interior_front_file_id="IF",
+            interior_rear_file_id="IR",
+            has_issues=False,
+        ),
+    ),
 ]
 
 

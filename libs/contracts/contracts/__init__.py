@@ -30,6 +30,13 @@ from .payments import (
     PaymentResult,
     RecognizedReceiptDTO,
 )
+from .photo import (
+    PHOTO_COMMENT_MAX,
+    PhotoInspectionCreate,
+    PhotoInspectionDTO,
+    PhotoInspectionResult,
+    PhotoStatusDTO,
+)
 from .reports import (
     AdminDigest,
     AssistantAnswer,
@@ -70,4 +77,6 @@ __all__ = [
     "FineDTO", "FineCreate", "FineImportItem", "FineImportResult",
     "MaintenanceDTO", "MaintenanceUpsert",
     "PeriodicTaskDTO", "PeriodicTaskUpsert", "PeriodicTaskPatch", "TaskRunDTO",
+    "PhotoInspectionCreate", "PhotoInspectionDTO", "PhotoInspectionResult", "PhotoStatusDTO",
+    "PHOTO_COMMENT_MAX",
 ]
