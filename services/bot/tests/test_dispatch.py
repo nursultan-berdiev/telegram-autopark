@@ -214,3 +214,28 @@ async def test_guest_with_broken_invite_link_gets_problem_text(
 
     assert texts, "хендлер /start <code> не ответил"
     assert "истёк" in texts[0].lower()
+
+
+async def test_documents_button_reaches_driver(dispatcher, shared_api, bot_with_fake_session):
+    """Кнопка из меню водителя доходит до его документов (фильтр IsAdminOrDriver)."""
+    shared_api.set("me", DRIVER_ME)
+    shared_api.set("car_documents", [])
+    shared_api.set("common_documents", [])
+
+    texts = await _feed(
+        dispatcher, bot_with_fake_session, _message(DRIVER_ID, "📄 Документы"), shared_api
+    )
+
+    assert texts and "Документов пока нет" in texts[0]
+    ((args, _),) = shared_api.called("car_documents")
+    assert args == (DRIVER_ME["driver"]["car_id"],)
+
+
+async def test_documents_closed_for_guest(dispatcher, shared_api, bot_with_fake_session):
+    shared_api.set("me", GUEST_ME)
+
+    await _feed(
+        dispatcher, bot_with_fake_session, _message(GUEST_ID, "📄 Документы"), shared_api
+    )
+
+    assert shared_api.called("common_documents") == []

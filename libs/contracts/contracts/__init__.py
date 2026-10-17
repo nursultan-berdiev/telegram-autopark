@@ -3,6 +3,13 @@ from .alerts import AlertDTO, RuleDTO, RuleUpsert
 from .cars import CarCreate, CarDTO, CarStateDTO, TrackerDTO, TrackerUpsert
 from .commands import CommandDTO, CommandRequest, CommandResult
 from .common import DTO, Problem, Role
+from .documents import (
+    DOCUMENT_MAX_FILE_ID,
+    DOCUMENT_MAX_FILE_NAME,
+    DOCUMENT_MAX_TITLE,
+    DocumentCreate,
+    DocumentDTO,
+)
 from .drivers import (
     DriverDTO,
     DriverRegister,
@@ -70,4 +77,6 @@ __all__ = [
     "FineDTO", "FineCreate", "FineImportItem", "FineImportResult",
     "MaintenanceDTO", "MaintenanceUpsert",
     "PeriodicTaskDTO", "PeriodicTaskUpsert", "PeriodicTaskPatch", "TaskRunDTO",
+    "DocumentCreate", "DocumentDTO", "DOCUMENT_MAX_TITLE",
+    "DOCUMENT_MAX_FILE_NAME", "DOCUMENT_MAX_FILE_ID",
 ]

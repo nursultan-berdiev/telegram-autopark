@@ -83,3 +83,14 @@ class FleetCB(CallbackData, prefix="flt"):
     action: str  # state | tracker | tracker_set | fines | fine_add | maint | maint_set | maint_done
     car_id: int = 0
     obj_id: int = 0
+
+
+class DocCB(CallbackData, prefix="doc"):
+    """Документы: выбор машины, список, открытие файла, загрузка, удаление.
+
+    `car_id=0` — общие документы парка (id машин начинаются с 1).
+    """
+
+    action: str  # owners | list | open | add | delete | delete_confirm | delete_cancel
+    car_id: int = 0
+    doc_id: int = 0

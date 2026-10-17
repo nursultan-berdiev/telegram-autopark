@@ -4,6 +4,8 @@ from __future__ import annotations
 from aiogram.types import ReplyKeyboardMarkup
 from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
+from app.keyboards.documents import BTN_DOCUMENTS
+
 # Тексты кнопок главного меню админа. По мере реализации этапов
 # соответствующие хендлеры будут подключаться к этим кнопкам.
 BTN_CARS = "🚗 Автопарк"
@@ -25,6 +27,7 @@ def admin_menu() -> ReplyKeyboardMarkup:
     builder.button(text=BTN_REPORTS)
     builder.button(text=BTN_AI)
     builder.button(text=BTN_FINES)
+    builder.button(text=BTN_DOCUMENTS)
     builder.button(text=BTN_ADMIN_WEB)
-    builder.adjust(2, 2, 2, 2)
+    builder.adjust(2)
     return builder.as_markup(resize_keyboard=True)

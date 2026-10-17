@@ -74,6 +74,13 @@ ADMIN_CALLS = [
     ("fleet_fines", lambda api: api.fleet_fines(tg_id=ACTOR)),
     ("check_fines", lambda api: api.check_fines(tg_id=ACTOR)),
     ("admin_login_link", lambda api: api.admin_login_link(tg_id=ACTOR)),
+    (
+        "add_document",
+        lambda api: api.add_document(
+            tg_id=ACTOR, car_id=1, title="ОСАГО", file_id="BQAC", file_kind="document"
+        ),
+    ),
+    ("delete_document", lambda api: api.delete_document(1, tg_id=ACTOR)),
 ]
 
 
