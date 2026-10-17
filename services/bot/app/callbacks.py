@@ -91,3 +91,14 @@ class AnnouncementCB(CallbackData, prefix="ann"):
     action: str  # page | card | new | send | cancel | delete | delete_confirm
     ann_id: int = 0
     page: int = 0
+
+
+class DocCB(CallbackData, prefix="doc"):
+    """Документы: выбор машины, список, открытие файла, загрузка, удаление.
+
+    `car_id=0` — общие документы парка (id машин начинаются с 1).
+    """
+
+    action: str  # owners | list | open | add | delete | delete_confirm | delete_cancel
+    car_id: int = 0
+    doc_id: int = 0
