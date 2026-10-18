@@ -38,11 +38,14 @@ from app.errors import Conflict, DomainError, Validation
 log = logging.getLogger(__name__)
 
 REMINDER_KIND = "photo_reminder"  # outbound_messages.kind
-# Та же четвёрка фото в этом окне — повтор после таймаута, а не новая сдача.
+# Тот же набор фото в этом окне — повтор после таймаута, а не новая сдача.
 REPEAT_WINDOW = timedelta(minutes=10)
 # Пространство имён advisory-lock сдачи (у engine_enforcement — 0x0D00).
 _SUBMIT_LOCK_NS = 0x0D01
-_HOW = "Нажмите «📸 Фотоконтроль» и пришлите 4 фото: спереди, сзади, салон спереди, салон сзади."
+_HOW = (
+    "Нажмите «📸 Фотоконтроль» и пришлите 6 фото: спереди, слева, сзади, справа, "
+    "салон спереди, салон сзади."
+)
 
 
 def local_today(now: datetime) -> date:
@@ -211,7 +214,7 @@ async def _lock_driver(session: AsyncSession, driver_id: int) -> None:
 async def _recent_repeat(
     session: AsyncSession, driver_id: int, photos: dict[str, str], now: datetime
 ) -> PhotoInspection | None:
-    """Осмотр с той же четвёркой file_id не старше REPEAT_WINDOW (граница включительно)."""
+    """Осмотр с тем же набором file_id не старше REPEAT_WINDOW (граница включительно)."""
     return await session.scalar(
         select(PhotoInspection).where(
             PhotoInspection.driver_id == driver_id,
@@ -226,7 +229,9 @@ async def submit(
     *,
     tg_user_id: int | None,
     front_file_id: str,
+    left_file_id: str,
     rear_file_id: str,
+    right_file_id: str,
     interior_front_file_id: str,
     interior_rear_file_id: str,
     has_issues: bool,
@@ -235,7 +240,7 @@ async def submit(
 ) -> tuple[PhotoInspection, PhotoSchedule]:
     """Принимает осмотр от водителя (личность — по tg id, машина — из его записи).
 
-    Повтор той же четвёрки фото в пределах REPEAT_WINDOW (бот переспросил после
+    Повтор того же набора фото в пределах REPEAT_WINDOW (бот переспросил после
     таймаута) возвращает уже принятый осмотр, а не заводит второй. В отличие от
     run_daily, коммитит сам: это одна операция API.
 
@@ -245,7 +250,9 @@ async def submit(
     driver = await _active_driver(session, tg_user_id)
     photos = {
         "front_file_id": front_file_id,
+        "left_file_id": left_file_id,
         "rear_file_id": rear_file_id,
+        "right_file_id": right_file_id,
         "interior_front_file_id": interior_front_file_id,
         "interior_rear_file_id": interior_rear_file_id,
     }

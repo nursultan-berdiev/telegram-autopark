@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     # 20 (а не 15) — запас под крон бота 21:45 при сроке 22:00.
     warn_lead_minutes: int = Field(default=20, alias="WARN_LEAD_MINUTES")
 
-    # Фотоконтроль: водитель сдаёт 4 фото машины раз в N дней (одна периодичность
+    # Фотоконтроль: водитель сдаёт 6 фото машины раз в N дней (одна периодичность
     # на парк); следующий срок отсчитывается от дня сдачи.
     photo_inspection_interval_days: int = Field(
         default=7, alias="PHOTO_INSPECTION_INTERVAL_DAYS"

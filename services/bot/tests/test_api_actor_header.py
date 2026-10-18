@@ -92,7 +92,9 @@ ADMIN_CALLS = [
         lambda api: api.submit_photo_inspection(
             tg_id=ACTOR,
             front_file_id="F",
+            left_file_id="L",
             rear_file_id="R",
+            right_file_id="RT",
             interior_front_file_id="IF",
             interior_rear_file_id="IR",
             has_issues=False,

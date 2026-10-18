@@ -18,12 +18,17 @@ from tests.conftest import ADMIN_ID, DRIVER_ID, FakeApi
 
 TODAY = date(2026, 10, 17)
 DRIVER = {"id": 1, "tg_user_id": DRIVER_ID, "car_id": 7, "car_plate": "01KG007AAA"}
+# Порядок обхода машины — тот же, что у шагов бота.
 FILES = {
     "front_file_id": "F",
+    "left_file_id": "L",
     "rear_file_id": "R",
+    "right_file_id": "RT",
     "interior_front_file_id": "IF",
     "interior_rear_file_id": "IR",
 }
+ALL_MEDIA = ["F", "L", "R", "RT", "IF", "IR"]
+CAPTIONS = ["Спереди", "Слева", "Сзади", "Справа", "Салон спереди", "Салон сзади"]
 
 
 def _status(**over) -> dict:
@@ -224,7 +229,8 @@ async def test_each_step_asks_next_angle():
 
     await screens.take_photo(message, state)
 
-    assert state.state == PhotoForm.rear and "Шаг 2 из 4" in message.answers[0]
+    assert state.state == PhotoForm.left and message.answers[0].startswith("Шаг 2 из 6. ")
+    assert "левый бок" in message.answers[0]
 
 
 async def test_non_photo_is_rejected():
@@ -253,8 +259,8 @@ async def test_report_ok_submits_and_notifies_admins():
     chats = [chat for chat, _ in bot.albums]
     assert chats == [ADMIN_ID, 222]
     media = bot.albums[0][1]
-    assert [m.media for m in media] == ["F", "R", "IF", "IR"]
-    assert [m.caption for m in media] == ["Спереди", "Сзади", "Салон спереди", "Салон сзади"]
+    assert [m.media for m in media] == ALL_MEDIA
+    assert [m.caption for m in media] == CAPTIONS
     assert "✅ Замечаний нет" in bot.messages[0][1]
 
 
@@ -331,7 +337,7 @@ async def test_admin_opens_driver_history_and_album():
     api = FakeApi(photo_inspection=_inspection())
     opened = Callback(from_user=User(ADMIN_ID))
     await screens.open_inspection(opened, PhotoCB(action="open", insp_id=9), api)
-    assert [m.media for m in opened.message.albums[0]] == ["F", "R", "IF", "IR"]
+    assert [m.media for m in opened.message.albums[0]] == ALL_MEDIA
     assert "Водитель: Иванов" in opened.message.answers[0]
 
 
@@ -348,7 +354,7 @@ async def test_step_detected_from_storage_string_state():
 
     await screens.take_photo(Msg(photo=[Photo("R")]), state)
 
-    assert state.state == PhotoForm.interior_front and state.data["rear_file_id"] == "R"
+    assert state.state == PhotoForm.right and state.data["rear_file_id"] == "R"
 
 
 async def test_double_tap_on_same_screen_is_quiet():
@@ -391,6 +397,21 @@ async def test_same_photo_twice_is_rejected_at_the_step():
 
     await screens.take_photo(message, state)
 
-    assert state.state == PhotoForm.rear
+    assert state.state == PhotoForm.left
     assert "уже было" in message.answers[0]
-    assert "rear_file_id" not in state.data
+    assert "left_file_id" not in state.data
+
+
+def test_album_of_old_inspection_without_sides():
+    """Осмотры до появления боков: альбом из четырёх фото, без пустых позиций."""
+    old = _inspection(left_file_id=None, right_file_id=None)
+
+    media = screens.album(old)
+
+    assert [m.media for m in media] == ["F", "R", "IF", "IR"]
+    assert [m.caption for m in media] == ["Спереди", "Сзади", "Салон спереди", "Салон сзади"]
+
+
+def test_status_lists_all_six_angles():
+    text = screens.driver_status_text(_status(), TODAY)
+    assert "Нужно 6 фото: спереди, слева, сзади, справа, салон спереди, салон сзади" in text

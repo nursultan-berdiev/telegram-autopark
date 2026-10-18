@@ -1,4 +1,4 @@
-"""Фотоконтроль состояния машины: водитель сдаёт 4 фото и отчёт, админ смотрит.
+"""Фотоконтроль состояния машины: водитель сдаёт 6 фото и отчёт, админ смотрит.
 
 Срок, напоминания и алерт о просрочке ведёт core-api (задача celery-beat). Бот
 собирает фото (Telegram file_id), отдаёт осмотр в core-api и сразу показывает
@@ -35,18 +35,26 @@ from contracts import PHOTO_COMMENT_MAX
 log = logging.getLogger(__name__)
 router = Router(name="photo")
 
-# Ракурсы по порядку: состояние FSM, поле осмотра, подпись к фото, подсказка.
+# Ракурсы по порядку обхода машины: состояние FSM, поле осмотра, подпись, подсказка.
 STEPS = [
     (PhotoForm.front, "front_file_id", "Спереди",
-     "Шаг 1 из 4. Сфотографируйте машину спереди — целиком, с номером."),
+     "Сфотографируйте машину спереди — целиком, с номером."),
+    (PhotoForm.left, "left_file_id", "Слева",
+     "Теперь левый бок — целиком, от переднего бампера до заднего."),
     (PhotoForm.rear, "rear_file_id", "Сзади",
-     "Шаг 2 из 4. Теперь сзади — тоже целиком, с номером."),
+     "Теперь сзади — тоже целиком, с номером."),
+    (PhotoForm.right, "right_file_id", "Справа",
+     "Теперь правый бок — целиком, от заднего бампера до переднего."),
     (PhotoForm.interior_front, "interior_front_file_id", "Салон спереди",
-     "Шаг 3 из 4. Салон спереди: руль, панель, передние сиденья."),
+     "Салон спереди: руль, панель, передние сиденья."),
     (PhotoForm.interior_rear, "interior_rear_file_id", "Салон сзади",
-     "Шаг 4 из 4. Салон сзади: задние сиденья."),
+     "Салон сзади: задние сиденья."),
 ]
 _STEP_STATES = [step[0] for step in STEPS]
+
+
+def step_prompt(index: int) -> str:
+    return f"Шаг {index + 1} из {len(STEPS)}. {STEPS[index][3]}"
 
 
 def _today() -> date:
@@ -65,14 +73,17 @@ def driver_status_text(status: dict, today: date) -> str:
     last = moment(status.get("last_inspection_at"))
     if last:
         lines.append(f"Последний пройден: {last}")
-    lines.append("Нужно 4 фото: спереди, сзади, салон спереди, салон сзади — и пара слов о состоянии.")
+    angles = ", ".join(label.lower() for _, _, label, _ in STEPS)
+    lines.append(f"Нужно {len(STEPS)} фото: {angles} — и пара слов о состоянии.")
     return "\n".join(lines)
 
 
 def album(inspection: dict) -> list[InputMediaPhoto]:
+    """Фото осмотра по порядку обхода; у осмотров до появления боков их просто нет."""
     return [
         InputMediaPhoto(media=inspection[field], caption=label)
         for _, field, label, _ in STEPS
+        if inspection.get(field)
     ]
 
 
@@ -130,7 +141,7 @@ async def open_photo(
 async def start(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await state.set_state(PhotoForm.front)
-    await callback.message.answer(f"{STEPS[0][3]}\nДля отмены отправьте /cancel.")
+    await callback.message.answer(f"{step_prompt(0)}\nДля отмены отправьте /cancel.")
     await callback.answer()
 
 
@@ -150,7 +161,7 @@ async def take_photo(message: Message, state: FSMContext) -> None:
     )
     if index + 1 < len(STEPS):
         await state.set_state(STEPS[index + 1][0])
-        await message.answer(STEPS[index + 1][3])
+        await message.answer(step_prompt(index + 1))
         return
     await state.set_state(PhotoForm.report)
     await message.answer("Есть ли новые повреждения или неисправности?", reply_markup=report_kb())
