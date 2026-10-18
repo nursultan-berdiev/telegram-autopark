@@ -16,7 +16,9 @@ class PhotoInspectionCreate(DTO):
     """Осмотр от водителя. Кто сдаёт — сервер берёт из X-TG-User-Id, машину — из его записи."""
 
     front_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
+    left_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
     rear_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
+    right_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
     interior_front_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
     interior_rear_file_id: str = Field(min_length=1, max_length=PHOTO_FILE_ID_MAX)
     has_issues: bool = False
@@ -24,7 +26,10 @@ class PhotoInspectionCreate(DTO):
 
 
 class PhotoInspectionDTO(DTO):
-    """Сданный осмотр: 4 фото (Telegram file_id) и отчёт; имя и номер — для подписи."""
+    """Сданный осмотр: фото (Telegram file_id) и отчёт; имя и номер — для подписи.
+
+    Боков (left/right) нет у осмотров, сданных до их появления, — тогда None.
+    """
 
     id: int
     driver_id: int
@@ -32,7 +37,9 @@ class PhotoInspectionDTO(DTO):
     car_id: int | None = None
     car_plate: str | None = None
     front_file_id: str
+    left_file_id: str | None = None
     rear_file_id: str
+    right_file_id: str | None = None
     interior_front_file_id: str
     interior_rear_file_id: str
     has_issues: bool

@@ -155,7 +155,7 @@ rule.engine → alert(open)
 
 ## Фотоконтроль: алерт сейчас, авто-блокировка — задел (2026-10)
 
-Водитель раз в `PHOTO_INSPECTION_INTERVAL_DAYS` (7) сдаёт 4 фото машины и отчёт
+Водитель раз в `PHOTO_INSPECTION_INTERVAL_DAYS` (7) сдаёт 6 фото машины (перед, бока, зад, салон спереди и сзади) и отчёт
 (`app/domain/photo_inspections.py`). Ежедневная задача celery-beat
 `app.tasks.photo_inspections.notify_photo_inspections` шлёт напоминания через outbox и
 держит системный алерт `photo_inspection_overdue`. Карточка алерта предлагает ручную

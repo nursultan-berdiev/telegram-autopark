@@ -33,7 +33,9 @@ TODAY = date(2026, 10, 17)
 POLICY = enforcement.photo_policy(2)
 PHOTOS = {
     "front_file_id": "F",
+    "left_file_id": "L",
     "rear_file_id": "R",
+    "right_file_id": "RT",
     "interior_front_file_id": "IF",
     "interior_rear_file_id": "IR",
 }

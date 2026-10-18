@@ -28,7 +28,9 @@ NOW = datetime(2026, 10, 17, 6, 0, tzinfo=timezone.utc)  # 12:00 по Бишке
 TODAY = date(2026, 10, 17)
 PHOTOS = {
     "front_file_id": "F",
+    "left_file_id": "L",
     "rear_file_id": "R",
+    "right_file_id": "RT",
     "interior_front_file_id": "IF",
     "interior_rear_file_id": "IR",
 }
@@ -475,8 +477,13 @@ async def test_api_submit_only_by_driver(client, session, actor):
         (_body(rear_file_id="x" * 257), "rear_file_id"),
         (_body(comment="я" * 2001), "comment"),
         ({k: v for k, v in _body().items() if k != "interior_rear_file_id"}, "interior_rear_file_id"),
+        ({k: v for k, v in _body().items() if k != "left_file_id"}, "left_file_id"),
+        ({k: v for k, v in _body().items() if k != "right_file_id"}, "right_file_id"),
     ],
-    ids=["пустое фото", "длинный file_id", "длинный комментарий", "нет ракурса"],
+    ids=[
+        "пустое фото", "длинный file_id", "длинный комментарий", "нет ракурса",
+        "нет левого бока", "нет правого бока",
+    ],
 )
 async def test_api_submit_contract_validation(client, session, bad, field):
     """Контракт: 422 именно по тому полю, а не любой."""
@@ -505,6 +512,23 @@ async def test_api_submit_domain_validation(client, session, bad, detail):
     response = await client.post("/photo-inspections", json=bad, headers={"X-TG-User-Id": "501"})
 
     assert response.status_code == 422 and response.json()["detail"] == detail
+
+
+async def test_api_returns_sides_and_reads_old_four_photo_inspection(client, session):
+    """Осмотр, сданный до появления боков, читается: бока просто пусты."""
+    driver = await _driver(session)
+    created = await client.post("/photo-inspections", json=_body(), headers={"X-TG-User-Id": "501"})
+    body = created.json()["inspection"]
+    assert body["left_file_id"] == "L" and body["right_file_id"] == "RT"
+
+    old = PhotoInspection(
+        driver_id=driver.id, car_id=driver.car_id, front_file_id="F0", rear_file_id="R0",
+        interior_front_file_id="IF0", interior_rear_file_id="IR0",
+    )
+    session.add(old)
+    await session.commit()
+    legacy = (await client.get(f"/photo-inspections/{old.id}")).json()
+    assert legacy["left_file_id"] is None and legacy["right_file_id"] is None
 
 
 async def test_api_not_found(client):

@@ -789,7 +789,7 @@ class PhotoSchedule(Base):
 
 
 class PhotoInspection(Base):
-    """Сданный фотоконтроль: четыре ракурса и отчёт водителя о состоянии.
+    """Сданный фотоконтроль: шесть ракурсов и отчёт водителя о состоянии.
 
     Фото — Telegram file_id, как у фото машин и чеков.
     """
@@ -805,6 +805,10 @@ class PhotoInspection(Base):
     )
     front_file_id: Mapped[str] = mapped_column(String(256))
     rear_file_id: Mapped[str] = mapped_column(String(256))
+    # Бока добавлены в 0027: у осмотров, сданных до неё, их нет. Новые сдачи без
+    # них не примет контракт PhotoInspectionCreate.
+    left_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    right_file_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     interior_front_file_id: Mapped[str] = mapped_column(String(256))
     interior_rear_file_id: Mapped[str] = mapped_column(String(256))
     has_issues: Mapped[bool] = mapped_column(default=False, server_default=false())
