@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { api } from "../lib/api";
 import { ActionButton, Async, Card, fmtDate } from "../components/ui";
+import { MediaImage } from "../components/Media";
 import type { DriverWithStats, Schedule, ScheduleWithStatus } from "../lib/types";
 
 // Конвенция парка: дедлайн оплаты — 22:00 по Бишкеку.
@@ -126,14 +127,22 @@ export default function DriverDetail() {
       <Card title="Карточка">
         <Async loading={driver.loading} error={driver.error} data={driver.data}>
           {(d) => (
-            <dl className="kv">
-              <dt>Телефон</dt><dd>{d.driver.phone ?? "—"}</dd>
-              <dt>ИНН</dt><dd>{d.driver.inn ?? "—"}</dd>
-              <dt>Машина</dt><dd>{d.driver.car_plate ?? "—"}</dd>
-              <dt>Статус</dt><dd>{d.driver.active ? "активен" : "уволен"}</dd>
-              <dt>Платежей</dt><dd>{d.stats.payments_count}</dd>
-              <dt>Всего оплачено</dt><dd>{d.stats.total_paid}</dd>
-            </dl>
+            <div className="card-media-row">
+              <MediaImage
+                kind="driver-selfie"
+                refId={d.driver.id}
+                alt={`Селфи ${d.driver.full_name}`}
+                className="photo"
+              />
+              <dl className="kv">
+                <dt>Телефон</dt><dd>{d.driver.phone ?? "—"}</dd>
+                <dt>ИНН</dt><dd>{d.driver.inn ?? "—"}</dd>
+                <dt>Машина</dt><dd>{d.driver.car_plate ?? "—"}</dd>
+                <dt>Статус</dt><dd>{d.driver.active ? "активен" : "уволен"}</dd>
+                <dt>Платежей</dt><dd>{d.stats.payments_count}</dd>
+                <dt>Всего оплачено</dt><dd>{d.stats.total_paid}</dd>
+              </dl>
+            </div>
           )}
         </Async>
         {driver.data?.driver.active && (

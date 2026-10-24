@@ -300,3 +300,27 @@ select.field { height: 34px; }
   .searchbox { max-width: none; }
   .page { padding: 16px; }
 }
+
+/* ===== Медиа и документы ===== */
+.media-img { max-width: 100%; border-radius: 12px; display: block; }
+.card-media-row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+.card-media-row .photo {
+  width: 220px; max-width: 100%; height: auto; border-radius: 14px;
+  border: 1px solid var(--border); object-fit: cover;
+}
+.card-media-row .kv { flex: 1; min-width: 220px; }
+
+.doc-list { display: flex; flex-direction: column; gap: 10px; }
+.doc { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; }
+.doc-thumb { width: 54px; height: 54px; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); flex: 0 0 auto; }
+.doc-ico {
+  width: 54px; height: 54px; flex: 0 0 auto; border-radius: 10px;
+  display: grid; place-items: center; background: var(--soft); color: var(--muted); font-size: 12px;
+}
+.doc-main { flex: 1; min-width: 0; }
+.doc-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+.doc-actions { display: flex; align-items: center; gap: 12px; flex: 0 0 auto; margin-left: auto; }
+@media (max-width: 560px) {
+  .card-media-row .photo { width: 100%; }
+}

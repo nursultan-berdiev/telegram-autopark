@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { api } from "../lib/api";
 import { ActionButton, Async, Card, ErrorBox, Loading, fmtDate } from "../components/ui";
+import { MediaImage } from "../components/Media";
+import DocumentList from "../components/DocumentList";
 import type { Car, CarState, Command, CommandResult, Fine, Maintenance, Tracker } from "../lib/types";
 
 function TrackerCard({ carId }: { carId: string }) {
@@ -243,13 +245,16 @@ export default function CarDetail() {
       <Card title="Карточка">
         <Async loading={car.loading} error={car.error} data={car.data}>
           {(c) => (
-            <dl className="kv">
-              <dt>Номер</dt><dd>{c.plate}</dd>
-              <dt>Модель</dt><dd>{c.model ?? "—"}</dd>
-              <dt>Статус</dt><dd>{c.status === "free" ? "свободна" : "занята"}</dd>
-              <dt>Водитель</dt>
-              <dd>{c.driver_id ? <Link to={`/drivers/${c.driver_id}`}>{c.driver_name}</Link> : "—"}</dd>
-            </dl>
+            <div className="card-media-row">
+              <MediaImage kind="car-photo" refId={c.id} alt={`Фото ${c.plate}`} className="photo" />
+              <dl className="kv">
+                <dt>Номер</dt><dd>{c.plate}</dd>
+                <dt>Модель</dt><dd>{c.model ?? "—"}</dd>
+                <dt>Статус</dt><dd>{c.status === "free" ? "свободна" : "занята"}</dd>
+                <dt>Водитель</dt>
+                <dd>{c.driver_id ? <Link to={`/drivers/${c.driver_id}`}>{c.driver_name}</Link> : "—"}</dd>
+              </dl>
+            </div>
           )}
         </Async>
         {car.data?.status === "free" && (
@@ -299,6 +304,10 @@ export default function CarDetail() {
 
       <TrackerCard carId={id!} />
       <MaintenanceCard carId={id!} />
+
+      <Card title="Документы машины">
+        <DocumentList path={`/cars/${id}/documents`} />
+      </Card>
 
       <Card title="Штрафы">
         <Async loading={fines.loading} error={fines.error} data={fines.data} empty="Штрафов нет">
