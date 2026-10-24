@@ -56,6 +56,8 @@ services:
       MCP_TOKEN: ${MCP_TOKEN:-}
       ADAPTER_URL: http://tracker-adapter:8001
       BOT_MEDIA_URL: http://bot:8081
+      # Публичный адрес Traccar для SSO-ссылки «Карта» (виден браузеру).
+      TRACCAR_PUBLIC_URL: ${TRACCAR_PUBLIC_URL:-https://tracker.rentalbish.kg}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     ports:
       - "127.0.0.1:8000:8000"

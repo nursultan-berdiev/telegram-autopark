@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
+import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 
 const NAV = [
@@ -10,6 +12,36 @@ const NAV = [
   { to: "/reports", label: "Отчёты" },
   { to: "/journals", label: "Журналы" },
 ];
+
+// Карта Traccar открывается в новой вкладке по короткоживущему токену автологина:
+// отдельный сервис на своём домене, встраивать в iframe не нужно.
+function MapLink() {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(false);
+  const open = async () => {
+    setBusy(true);
+    setErr(false);
+    // Вкладку открываем СИНХРОННО в обработчике клика: Safari (и другие при
+    // медленном ответе) блокируют popup, открытый уже после await.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null; // noopener вручную — имя окна не задаём
+    try {
+      const { url } = await api.post<{ url: string }>("/traccar/sso");
+      if (tab) tab.location.href = url;
+      else setErr(true); // popup заблокирован браузером
+    } catch {
+      setErr(true);
+      if (tab) tab.close();
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <button className="nav-map" onClick={open} disabled={busy} title="Открыть карту Traccar">
+      {busy ? "Карта…" : err ? "Карта — ошибка" : "Карта ↗"}
+    </button>
+  );
+}
 
 export default function Layout() {
   const { me, logout } = useAuth();
@@ -23,10 +55,7 @@ export default function Layout() {
               {n.label}
             </NavLink>
           ))}
-          {/* Карта Traccar — SSO появится в Phase 4 */}
-          <span className="nav-disabled" title="Появится в следующем этапе">
-            Карта (скоро)
-          </span>
+          <MapLink />
         </nav>
       </aside>
       <main className="content">

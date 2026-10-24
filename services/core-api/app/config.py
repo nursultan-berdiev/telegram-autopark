@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     bot_media_url: str = Field(default="http://bot:8081", alias="BOT_MEDIA_URL")
     bot_media_timeout_seconds: float = Field(default=30.0, alias="BOT_MEDIA_TIMEOUT_SECONDS")
 
+    # Публичный адрес Traccar (куда ведёт SSO-ссылка «Карта»): виден браузеру,
+    # поэтому не внутренний http://traccar:8082, а внешний домен/порт.
+    traccar_public_url: str = Field(default="", alias="TRACCAR_PUBLIC_URL")
+
     # --- ИИ (переехало из бота) ----------------------------------------------
     ai_backend: str = Field(default="auto", alias="AI_BACKEND")
     ai_timeout_seconds: float = Field(default=120.0, alias="AI_TIMEOUT_SECONDS")

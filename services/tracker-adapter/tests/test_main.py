@@ -22,6 +22,9 @@ class FakeProvider(TrackerProvider):
         self.command_result: dict = {"status": "sent", "result": "S20,OK"}
         self.state_point: NormalizedPoint | None = None
         self.connected = True
+        self.sso_token_value = "SSO-TOK"
+        self.sso_raises: Exception | None = None
+        self.sso_ttl: int | None = None
 
     async def list_devices(self) -> list[dict]:
         return []
@@ -36,6 +39,12 @@ class FakeProvider(TrackerProvider):
     async def send_command(self, external_id, cmd, params=None) -> dict:
         self.sent.append((external_id, cmd, params))
         return self.command_result
+
+    async def create_session_token(self, *, ttl_seconds: int) -> str:
+        self.sso_ttl = ttl_seconds
+        if self.sso_raises is not None:
+            raise self.sso_raises
+        return self.sso_token_value
 
 
 @pytest.fixture
@@ -104,6 +113,31 @@ async def test_commands_passes_through_failed_status():
 
     assert resp.status_code == 200
     assert resp.json() == {"status": "failed", "result": "timeout"}
+
+
+async def test_sso_token_requires_bearer(client, fake_provider):
+    resp = await client.post("/sso-token")
+    assert resp.status_code == 401
+
+
+async def test_sso_token_returns_token(client, fake_provider):
+    fake_provider.sso_token_value = "ABC123"
+    resp = await client.post("/sso-token", headers=AUTH)
+    assert resp.status_code == 200
+    assert resp.json() == {"token": "ABC123"}
+    assert fake_provider.sso_ttl == 60  # дефолт TRACCAR_SSO_TTL_SECONDS
+
+
+async def test_sso_token_not_implemented_501(client, fake_provider):
+    fake_provider.sso_raises = NotImplementedError("fake не умеет SSO")
+    resp = await client.post("/sso-token", headers=AUTH)
+    assert resp.status_code == 501
+
+
+async def test_sso_token_upstream_error_502(client, fake_provider):
+    fake_provider.sso_raises = RuntimeError("traccar упал")
+    resp = await client.post("/sso-token", headers=AUTH)
+    assert resp.status_code == 502
 
 
 async def test_state_requires_token(client, fake_provider):

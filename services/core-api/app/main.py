@@ -39,6 +39,7 @@ from app.routers import (
     rules,
     schedules,
     telemetry,
+    traccar,
     trackers,
     web_session,
 )
@@ -102,6 +103,7 @@ app.include_router(assistant.router, prefix="/assistant", tags=["assistant"])
 app.include_router(reminders.router, prefix="/reminders", tags=["reminders"])
 app.include_router(telemetry.router, tags=["telemetry"])
 app.include_router(trackers.router, tags=["trackers"])
+app.include_router(traccar.router, tags=["traccar"])
 app.include_router(rules.router, prefix="/rules", tags=["rules"])
 app.include_router(alerts.router, prefix="/alerts", tags=["alerts"])
 app.include_router(commands.router, tags=["commands"])

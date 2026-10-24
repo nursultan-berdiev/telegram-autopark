@@ -8,7 +8,7 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator, Callable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -124,6 +124,27 @@ class TraccarProvider(TrackerProvider):
             result = resp.json() if resp.content else None
             return {"status": "sent", "result": result}
         return {"status": "failed", "result": resp.text}
+
+    # --- SSO -------------------------------------------------------------------
+
+    async def create_session_token(self, *, ttl_seconds: int) -> str:
+        """Токен автологина в Traccar UI (`?token=`).
+
+        `expiration` обязателен: без него Traccar 6.14.5 отвечает ошибкой
+        (проверено на dev). Срок короткий — токен многоразовый до expiration и
+        пускает в UI любого, у кого он есть.
+        """
+        expiration = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+        resp = await self._request(
+            "POST",
+            "/api/session/token",
+            data={"expiration": expiration.strftime("%Y-%m-%dT%H:%M:%SZ")},
+        )
+        resp.raise_for_status()
+        token = resp.text.strip()
+        if not token:
+            raise ValueError("Traccar вернул пустой session-токен")
+        return token
 
     # --- состояние / поллинг ---------------------------------------------------
 

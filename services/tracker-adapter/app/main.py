@@ -71,6 +71,10 @@ class CommandResponse(BaseModel):
     result: Any = None
 
 
+class SsoTokenResponse(BaseModel):
+    token: str
+
+
 def _serialize_point(point: NormalizedPoint) -> dict:
     data = asdict(point)
     data["ts"] = point.ts.isoformat()
@@ -116,6 +120,32 @@ async def get_state(
         logger.warning("состояние %s недоступно", external_id, exc_info=True)
         return None
     return _serialize_point(point) if point is not None else None
+
+
+@app.post(
+    "/sso-token",
+    response_model=SsoTokenResponse,
+    dependencies=[Depends(require_adapter_token)],
+)
+async def sso_token(
+    provider: TrackerProvider = Depends(get_provider_dep),
+) -> SsoTokenResponse:
+    """Короткоживущий токен входа в UI Traccar — для кнопки «Карта» в веб-админке.
+
+    Traccar-креды живут только здесь; наружу отдаём лишь токен с коротким сроком.
+    """
+    try:
+        token = await provider.create_session_token(
+            ttl_seconds=settings.sso_token_ttl_seconds
+        )
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail=str(exc)) from exc
+    except Exception:  # noqa: BLE001 — причина в логе, наружу общий текст
+        logger.warning("sso-token: не удалось получить токен Traccar", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail="трекинг-платформа недоступна"
+        ) from None
+    return SsoTokenResponse(token=token)
 
 
 @app.get("/health")
