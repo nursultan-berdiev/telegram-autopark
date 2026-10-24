@@ -71,3 +71,21 @@ jobs:
         run: |
           cp .env.example .env
           docker compose config --quiet
+
+  web-admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/web-admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/web-admin/package-lock.json
+      - run: npm ci
+      - name: Типы и сборка SPA
+        run: npm run build
+      - name: Тесты SPA
+        run: npm test
