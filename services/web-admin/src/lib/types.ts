@@ -171,3 +171,12 @@ export interface TaskRun {
   detail: string | null;
   requested_by: number | null;
 }
+
+// Соответствует AnnouncementDTO (libs/contracts/contracts/announcements.py).
+export interface Announcement {
+  id: number;
+  text: string;
+  created_by: number;
+  recipients: number;
+  created_at: string | null;
+}

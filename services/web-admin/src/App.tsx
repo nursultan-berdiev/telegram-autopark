@@ -7,6 +7,7 @@ import Cars from "./pages/Cars";
 import CarDetail from "./pages/CarDetail";
 import Drivers from "./pages/Drivers";
 import DriverDetail from "./pages/DriverDetail";
+import Announcements from "./pages/Announcements";
 import Reports from "./pages/Reports";
 import Journals from "./pages/Journals";
 
@@ -22,6 +23,7 @@ function Gate() {
         <Route path="cars/:id" element={<CarDetail />} />
         <Route path="drivers" element={<Drivers />} />
         <Route path="drivers/:id" element={<DriverDetail />} />
+        <Route path="announcements" element={<Announcements />} />
         <Route path="reports" element={<Reports />} />
         <Route path="journals" element={<Journals />} />
         <Route path="*" element={<Navigate to="/" replace />} />
