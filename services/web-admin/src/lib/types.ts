@@ -75,6 +75,29 @@ export interface CarState {
   online: boolean;
 }
 
+// Соответствует TrackerDTO (libs/contracts/contracts/cars.py).
+export interface Tracker {
+  id: number;
+  car_id: number;
+  provider: string;
+  external_id: string;
+  config: Record<string, unknown> | null;
+  active: boolean;
+}
+
+// Соответствует MaintenanceDTO (libs/contracts/contracts/fleet.py). Decimal → строка.
+export interface Maintenance {
+  id: number;
+  car_id: number;
+  type: string;
+  interval_km: string;
+  last_service_km: string;
+  last_service_tracker_id: number | null;
+  last_service_at: string | null;
+  note: string | null;
+  over_km: string | null;
+}
+
 export interface Command {
   id: number;
   type: string;
