@@ -27,6 +27,7 @@ from app.routers import (
     maintenance,
     invitations,
     me,
+    media,
     outbound,
     outbox,
     payments,
@@ -112,6 +113,7 @@ app.include_router(outbound.router, tags=["outbound"])
 app.include_router(announcements.router, tags=["announcements"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(photo_inspections.router, tags=["photo-inspections"])
+app.include_router(media.router, tags=["media"])
 app.include_router(audit.router, tags=["audit"])
 app.include_router(web_session.router, tags=["web-session"])
 app.include_router(admin.router, tags=["admin"])

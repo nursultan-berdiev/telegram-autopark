@@ -25,6 +25,10 @@ class Settings(BaseSettings):
     core_api_url: str = Field(default="http://core-api:8000", alias="CORE_API_URL")
     core_api_token: str = Field(default="", alias="CORE_API_TOKEN")
     api_timeout_seconds: float = Field(default=30.0, alias="API_TIMEOUT_SECONDS")
+    # Внутренний медиа-сервер (file_id → байты для веб-админки). Наружу не
+    # публикуется; защищён CORE_API_TOKEN.
+    media_host: str = Field(default="0.0.0.0", alias="BOT_MEDIA_HOST")
+    media_port: int = Field(default=8081, alias="BOT_MEDIA_PORT")
 
     # Часовой пояс парка нужен петлям планировщика бота. Расписание самих
     # напоминаний/уведомлений живёт в periodic_tasks (celery-beat), не здесь.

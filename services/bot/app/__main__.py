@@ -12,6 +12,7 @@ from app.client import ApiClient
 from app.config import settings
 from app.handlers import get_main_router
 from app.logger import setup_logging
+from app.media import start_media_server
 from app.middlewares.role import RoleMiddleware
 from app.scheduler import setup_scheduler
 
@@ -51,9 +52,17 @@ async def main() -> None:
 
     logger.info("Бот запускается. Админов: %d", len(settings.admin_ids))
     await bot.delete_webhook(drop_pending_updates=True)
+    media_runner = None
     try:
+        try:
+            media_runner = await start_media_server(bot)
+        except OSError:
+            # Медиа нужно только веб-админке — занятый порт не повод ронять бота.
+            logger.exception("медиа-сервер не запущен; polling продолжаю без него")
         await dp.start_polling(bot)
     finally:
+        if media_runner is not None:
+            await media_runner.cleanup()
         if scheduler is not None:
             scheduler.shutdown(wait=False)
         await api.aclose()
