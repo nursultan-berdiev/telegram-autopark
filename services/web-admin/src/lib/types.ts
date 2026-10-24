@@ -92,6 +92,13 @@ export interface CommandResult {
   reason: string | null;
 }
 
+export interface Invitation {
+  code: string;
+  car_id: number;
+  expires_at: string | null;
+  ttl_label: string;
+}
+
 export interface Fine {
   id: number;
   amount: string | null;

@@ -1,4 +1,4 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { api } from "../lib/api";
 import { ActionButton, Async, Card, fmtDate } from "../components/ui";
@@ -6,6 +6,7 @@ import type { Car, CarState, Command, CommandResult, Fine } from "../lib/types";
 
 export default function CarDetail() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const car = useApi<Car>(`/cars/${id}`);
   const state = useApi<CarState>(`/cars/${id}/state`);
   const commands = useApi<Command[]>(`/cars/${id}/commands`);
@@ -56,6 +57,17 @@ export default function CarDetail() {
             </dl>
           )}
         </Async>
+        {car.data?.status === "free" && (
+          <div className="actions-row">
+            <ActionButton
+              label="🗑 Удалить машину"
+              confirm="Удалить машину? Доступно только для свободной машины без истории."
+              danger
+              onAction={() => api.del(`/cars/${id}`)}
+              onDone={() => navigate("/cars")}
+            />
+          </div>
+        )}
       </Card>
 
       <Card title="Где машина и двигатель">

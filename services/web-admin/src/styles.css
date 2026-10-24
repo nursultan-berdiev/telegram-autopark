@@ -105,3 +105,15 @@ button.danger { color: var(--danger); border-color: var(--danger); background: v
 .action { display: inline-flex; align-items: center; gap: 6px; }
 .action .error { display: inline; padding: 0; font-size: 13px; }
 .action .info { display: inline; font-size: 13px; color: var(--muted); }
+
+input, select {
+  font: inherit; padding: 6px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--panel); color: var(--text);
+}
+.form-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.form-grid { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-top: 12px; }
+.form-grid label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+.form-actions { display: flex; gap: 10px; align-items: center; }
+.hint { margin: 8px 0 0; font-size: 13px; }
+.invite { margin-top: 12px; }
+.invite code { background: var(--border); padding: 2px 6px; border-radius: 6px; }
