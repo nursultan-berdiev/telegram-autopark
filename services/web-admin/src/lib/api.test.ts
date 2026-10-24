@@ -41,6 +41,16 @@ describe("api: слияние заголовков", () => {
     expect(headers["X-Requested-With"]).toBe("fleet-admin");
   });
 
+  it("PATCH с телом: метод PATCH, Content-Type и X-Requested-With", async () => {
+    await api.patch("/periodic-tasks/1", { enabled: false });
+    const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+    const headers = init.headers as Record<string, string>;
+    expect(init.method).toBe("PATCH");
+    expect(headers["X-Requested-With"]).toBe("fleet-admin");
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(init.body).toBe(JSON.stringify({ enabled: false }));
+  });
+
   it("DELETE: метод DELETE, без тела и Content-Type, 204 → undefined", async () => {
     const r = await api.del("/fines/1");
     const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];

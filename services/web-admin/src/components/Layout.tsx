@@ -6,6 +6,7 @@ const NAV = [
   { to: "/cars", label: "Автопарк" },
   { to: "/drivers", label: "Водители" },
   { to: "/announcements", label: "Объявления" },
+  { to: "/periodic", label: "Задачи" },
   { to: "/reports", label: "Отчёты" },
   { to: "/journals", label: "Журналы" },
 ];

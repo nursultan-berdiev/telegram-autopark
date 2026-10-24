@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,29 +19,12 @@ from app.db.session import get_session
 from app.domain import admin_auth
 from app.domain import periodic as periodic_service
 from app.errors import DomainError, NotFound, Validation
+from app.tasks.catalog import KNOWN_TASKS
 from app.web import session as web_session
 from app.web.deps import current_admin
 
-log = logging.getLogger(__name__)
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "web" / "templates"))
-
-# Задачи, которые вообще разрешено ставить в расписание. Свободный ввод имени
-# означал бы запуск произвольной точки входа из формы в браузере.
-KNOWN_TASKS = {
-    "app.tasks.fines_tolom.check_fines_tolom": "Проверка штрафов по парку (tolom.kg, с суммами)",
-    "app.tasks.fines.check_fines": "Проверка штрафов по парку (carcheck.gov.kg, запасной)",
-    "app.tasks.payments_block.block_overdue": "Блокировка двигателя неоплативших к сроку",
-    "app.tasks.payments_unblock.unblock_paid": "Разблокировка двигателя после оплаты",
-    "app.tasks.fines_enforcement.enforce_fines": "Блокировка двигателя при превышении лимита штрафов",
-    "app.tasks.notifications.notify_daily_reminders": "Утреннее напоминание о платеже водителям",
-    "app.tasks.notifications.notify_overdue_warning": "Предупреждение водителю за 15 мин до срока",
-    "app.tasks.notifications.notify_block_notice": "Уведомление водителю: блокировка включена (22:00)",
-    "app.tasks.notifications.notify_admin_digest": "Админ-дайджест по платежам (22:05)",
-    "app.tasks.photo_inspections.notify_photo_inspections": "Фотоконтроль: напоминания водителям и алерт о просрочке",
-    "app.tasks.ping.ping": "Пробник (проверка связки beat → воркер)",
-}
-
 
 def _utc(value: datetime | None) -> datetime | None:
     if value is not None and value.tzinfo is None:
@@ -158,10 +140,9 @@ async def create_schedule(
     session: AsyncSession = Depends(get_session),
     _: int = Depends(current_admin),
 ) -> Response:
-    if task not in KNOWN_TASKS:
-        return RedirectResponse(url="/admin?error=неизвестная+задача", status_code=303)
     try:
         interval, cron = _period(interval_seconds, crontab)
+        # Имя задачи сверяет с каталогом create_task (инвариант в домене).
         await periodic_service.create_task(
             session, name=name.strip(), task=task, interval_seconds=interval, crontab=cron
         )
@@ -218,22 +199,13 @@ async def delete_schedule(
 async def run_now(
     task_id: int,
     session: AsyncSession = Depends(get_session),
-    _: int = Depends(current_admin),
+    actor: int = Depends(current_admin),
 ) -> Response:
-    row = await periodic_service.get_task(session, task_id)
+    # Та же постановка в очередь, что и у JSON-роутера веб-SPA.
+    try:
+        row = await periodic_service.run_task_now(session, task_id, requested_by=actor)
+    except DomainError as exc:
+        return RedirectResponse(url=f"/admin?error={exc.detail}", status_code=303)
     if row is None:
         raise NotFound(f"расписание {task_id} не найдено")
-    from app.tasks.celery_app import celery_app
-
-    try:
-        # retry=False: недоступный брокер должен сказать об этом сразу,
-        # а не держать страницу, пока celery перебирает попытки.
-        celery_app.send_task(
-            row.task, kwargs={"periodic_task_id": row.id}, retry=False
-        )
-    except Exception as exc:  # noqa: BLE001 — брокер лежит, это ответ странице
-        log.warning("задача %s не поставлена в очередь", row.task, exc_info=True)
-        return RedirectResponse(
-            url=f"/admin?error=очередь+недоступна:+{type(exc).__name__}", status_code=303
-        )
     return RedirectResponse(url="/admin?msg=задача+поставлена+в+очередь", status_code=303)

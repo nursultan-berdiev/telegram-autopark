@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_actor
@@ -11,6 +11,7 @@ from app.db.models import PeriodicTask, TaskRun
 from app.db.session import get_session
 from app.domain import periodic as periodic_service
 from app.errors import NotFound
+from app.tasks.catalog import KNOWN_TASKS
 from contracts import (
     PeriodicTaskDTO,
     PeriodicTaskPatch,
@@ -19,6 +20,14 @@ from contracts import (
 )
 
 router = APIRouter()
+
+
+@router.get("/periodic-tasks/catalog")
+async def task_catalog(
+    _: int = Depends(require_admin_actor),
+) -> dict[str, str]:
+    """Имя задачи → человеческая подпись: наполняет выпадашку формы в SPA."""
+    return KNOWN_TASKS
 
 
 def _utc(dt: datetime | None) -> datetime | None:
@@ -71,6 +80,7 @@ async def create_periodic_task(
     session: AsyncSession = Depends(get_session),
     _: int = Depends(require_admin_actor),
 ) -> PeriodicTaskDTO:
+    # Имя задачи сверяет с каталогом сам create_task (инвариант в домене).
     row = await periodic_service.create_task(
         session,
         name=payload.name,
@@ -91,6 +101,7 @@ async def patch_periodic_task(
     _: int = Depends(require_admin_actor),
 ) -> PeriodicTaskDTO:
     changes = payload.model_dump(exclude_unset=True)
+    # Имя задачи сверяет с каталогом сам update_task (инвариант в домене).
     row = await periodic_service.update_task(session, task_id, **changes)
     if row is None:
         raise NotFound(f"расписание {task_id} не найдено")
@@ -105,6 +116,21 @@ async def delete_periodic_task(
 ) -> None:
     if not await periodic_service.delete_task(session, task_id):
         raise NotFound(f"расписание {task_id} не найдено")
+
+
+@router.post("/periodic-tasks/{task_id}/run", status_code=status.HTTP_202_ACCEPTED)
+async def run_now(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+    actor: int = Depends(require_admin_actor),
+) -> dict[str, str]:
+    """«Запустить сейчас»: ставит задачу в очередь немедленно, не трогая
+    расписание. Вся логика (каталог, start_run, kwargs как beat, 503 при лежащем
+    брокере) — в periodic_service.run_task_now, общая с Jinja-админкой."""
+    row = await periodic_service.run_task_now(session, task_id, requested_by=actor)
+    if row is None:
+        raise NotFound(f"расписание {task_id} не найдено")
+    return {"task": row.task}
 
 
 @router.get("/task-runs/{run_id}", response_model=TaskRunDTO)

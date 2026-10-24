@@ -196,6 +196,105 @@ async def test_unknown_field_in_patch_is_ignored_not_silently_applied(admin_clie
     assert resp.json()["enabled"] is False
 
 
+async def test_catalog_lists_known_tasks(admin_client):
+    resp = await admin_client.get("/periodic-tasks/catalog")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert TASK in body and body[TASK], "каталог отдаёт имя задачи и её подпись"
+
+
+async def test_create_rejects_unknown_task(admin_client):
+    """Имя вне каталога — запуск произвольной точки входа из браузера (422 как Validation)."""
+    resp = await admin_client.post(
+        "/periodic-tasks",
+        json={"name": "чужая", "task": "os.system", "interval_seconds": 3600},
+    )
+
+    assert resp.status_code == 422
+
+
+async def test_patch_rejects_unknown_task(admin_client, session):
+    row = await _make(session, name="живая")
+
+    resp = await admin_client.patch(f"/periodic-tasks/{row.id}", json={"task": "os.system"})
+
+    assert resp.status_code == 422
+
+
+def _capture_send(monkeypatch) -> list:
+    from app.tasks import celery_app as celery_module
+
+    calls: list = []
+    monkeypatch.setattr(
+        celery_module.celery_app, "send_task", lambda name, **kw: calls.append((name, kw))
+    )
+    return calls
+
+
+async def test_run_now_enqueues_with_run_id_and_args(admin_client, session, monkeypatch):
+    calls = _capture_send(monkeypatch)
+    row = await _make(session, name="ручной", args={"mode": "full"})
+
+    resp = await admin_client.post(f"/periodic-tasks/{row.id}/run")
+
+    assert resp.status_code == 202
+    assert resp.json()["task"] == TASK
+    assert len(calls) == 1
+    name, kw = calls[0]
+    assert name == TASK
+    assert kw["retry"] is False
+    # kwargs как у beat (args + periodic_task_id) ПЛЮС run_id для привязки строки.
+    assert kw["kwargs"]["mode"] == "full"
+    assert kw["kwargs"]["periodic_task_id"] == row.id
+    assert isinstance(kw["kwargs"]["run_id"], int)
+    # Прогон заведён до постановки и помечен, кем запрошен (actor из X-TG-User-Id).
+    run = await periodic_service.running_task(session, TASK)
+    assert run is not None and run.requested_by == 111
+
+
+async def test_run_now_rejects_task_outside_catalog(admin_client, session, monkeypatch):
+    """Строку с произвольным task, заведённую в обход роутера, «Запустить» не пустит."""
+    calls = _capture_send(monkeypatch)
+    row = PeriodicTask(name="левая", task="os.system", interval_seconds=3600, enabled=True)
+    session.add(row)
+    await session.commit()
+
+    resp = await admin_client.post(f"/periodic-tasks/{row.id}/run")
+
+    assert resp.status_code == 422
+    assert calls == []  # в очередь ничего не ушло
+
+
+async def test_run_now_dedup_second_click(admin_client, session, monkeypatch):
+    calls = _capture_send(monkeypatch)
+    row = await _make(session, name="двойной клик")
+
+    first = await admin_client.post(f"/periodic-tasks/{row.id}/run")
+    second = await admin_client.post(f"/periodic-tasks/{row.id}/run")
+
+    assert first.status_code == 202 and second.status_code == 202
+    assert len(calls) == 1, "пока прогон не завершён, второй раз в очередь не ставим"
+
+
+async def test_run_now_missing_is_404(admin_client):
+    assert (await admin_client.post("/periodic-tasks/9999/run")).status_code == 404
+
+
+async def test_run_now_broker_down_is_503_and_closes_run(admin_client, session, monkeypatch):
+    from app.tasks import celery_app as celery_module
+
+    def boom(*a, **k):
+        raise OSError("брокер недоступен")
+
+    monkeypatch.setattr(celery_module.celery_app, "send_task", boom)
+    row = await _make(session, name="без очереди")
+
+    assert (await admin_client.post(f"/periodic-tasks/{row.id}/run")).status_code == 503
+    # Строку прогона закрыли — иначе уникальный индекс навсегда заблокировал бы запуск.
+    assert await periodic_service.running_task(session, TASK) is None
+
+
 # --- планировщик: расписание переживает пересборку ---------------------------
 
 

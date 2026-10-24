@@ -13,8 +13,8 @@ NAME = "app.tasks.ping.ping"
 
 
 @celery_app.task(name=NAME)
-def ping(periodic_task_id: int | None = None) -> str:
-    with record_run(NAME, periodic_task_id) as run:
+def ping(periodic_task_id: int | None = None, run_id: int | None = None) -> str:
+    with record_run(NAME, periodic_task_id, run_id=run_id) as run:
         run.status = TaskRunStatus.ok
         run.detail = "планировщик, брокер и воркер на связи"
     log.info("ping выполнен")

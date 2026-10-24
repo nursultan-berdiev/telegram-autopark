@@ -295,12 +295,12 @@ async def _persist(scan: ScanResult) -> SyncReport:
 
 
 @celery_app.task(name=NAME)
-def check_fines(periodic_task_id: int | None = None) -> dict[str, int]:
+def check_fines(periodic_task_id: int | None = None, run_id: int | None = None) -> dict[str, int]:
     scan = ScanResult()
     report = SyncReport()
     try:
         plates = run_async(fleet_plates)
-        with record_run(NAME, periodic_task_id) as run:
+        with record_run(NAME, periodic_task_id, run_id=run_id) as run:
             with open_session() as checker:
                 scan = scan_plates(plates, checker)
             report = run_async(lambda: _persist(scan))

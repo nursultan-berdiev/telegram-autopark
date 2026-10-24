@@ -14,7 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import PeriodicTask, TaskRun, TaskRunStatus
-from app.errors import Conflict, Validation
+from app.errors import Conflict, DomainError, Validation
+from app.tasks.catalog import KNOWN_TASKS
 
 MIN_INTERVAL_SECONDS = 60
 
@@ -31,6 +32,14 @@ def validate_period(interval_seconds: int | None, crontab: str | None) -> None:
         raise Validation(f"интервал меньше {MIN_INTERVAL_SECONDS} с не имеет смысла")
     if crontab is not None and not croniter.is_valid(crontab):
         raise Validation(f"строка crontab не разобрана: {crontab!r}")
+
+
+def validate_task(task: str) -> None:
+    """Имя задачи — только из каталога: свободный ввод означал бы запуск
+    произвольной точки входа из формы или по кнопке «Запустить». Инвариант
+    держим в домене, чтобы его не обошёл ни один вызов create/update/run."""
+    if task not in KNOWN_TASKS:
+        raise Validation(f"неизвестная задача: {task}")
 
 
 async def list_tasks(session: AsyncSession) -> list[PeriodicTask]:
@@ -52,6 +61,7 @@ async def create_task(
     args: dict | None = None,
     enabled: bool = True,
 ) -> PeriodicTask:
+    validate_task(task)
     validate_period(interval_seconds, crontab)
     row = PeriodicTask(
         name=name,
@@ -105,6 +115,8 @@ async def update_task(
     ):
         if value is not _UNSET:
             setattr(row, field, value)
+    if task is not _UNSET:
+        validate_task(row.task)
     validate_period(row.interval_seconds, row.crontab)
     # Имя запоминаем до коммита: после отката объект просрочен, и чтение
     # атрибута полезло бы в БД из обработчика ошибки.
@@ -215,6 +227,43 @@ async def running_task(session: AsyncSession, task: str) -> TaskRun | None:
         .order_by(TaskRun.started_at.desc())
         .limit(1)
     )
+
+
+async def run_task_now(
+    session: AsyncSession, task_id: int, *, requested_by: int | None = None
+) -> PeriodicTask | None:
+    """«Запустить сейчас»: ставит задачу расписания в очередь немедленно.
+
+    Общий код для JSON-роутера и Jinja-админки. `None` — расписания нет.
+    Задача сверяется с каталогом (как в create/update): строка с произвольным
+    `task`, заведённая в обход роутера (ботом, старой формой, прямо в БД), по
+    кнопке в очередь не уйдёт. Прогон заводим до постановки (`start_run`) — он
+    виден в журнале сразу, а частичный уникальный индекс гасит двойной клик.
+    Kwargs как у beat (`args` + `periodic_task_id`) плюс `run_id` для привязки к
+    заведённой строке. Недоступный брокер → DomainError 503, строку прогона при
+    этом закрываем, иначе она навсегда заблокировала бы запуск.
+    """
+    row = await get_task(session, task_id)
+    if row is None:
+        return None
+    validate_task(row.task)
+    run, created = await start_run(session, task=row.task, requested_by=requested_by)
+    if not created:
+        return row  # прогон уже идёт — второй раз в очередь не ставим
+    # Локальный импорт: celery_app тянет реестр задач, а тот импортирует домен —
+    # на уровне модуля вышел бы цикл.
+    from app.tasks.celery_app import celery_app
+
+    kwargs = dict(row.args or {}, periodic_task_id=row.id, run_id=run.id)
+    try:
+        # retry=False: недоступный брокер отвечает сразу, а не копит попытки.
+        celery_app.send_task(row.task, kwargs=kwargs, retry=False)
+    except Exception as exc:  # noqa: BLE001 — брокер лёг, это и есть ответ клиенту
+        run.detail = "не удалось поставить в очередь"
+        run.finished_at = _now()
+        await session.commit()
+        raise DomainError("очередь задач недоступна", status_code=503) from exc
+    return row
 
 
 async def get_run(session: AsyncSession, run_id: int) -> TaskRun | None:
