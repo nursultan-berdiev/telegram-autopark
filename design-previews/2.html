@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дашборд · вариант 2 — control room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0a0e13; --panel:#121923; --panel2:#0f151d; --line:#1f2a37;
+    --ink:#e6edf3; --muted:#7d8b9c; --cyan:#22d3ee; --green:#34d399; --amber:#f59e0b; --red:#fb7185; --blue:#60a5fa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;font-size:14px}
+  .app{display:grid;grid-template-columns:64px 1fr;min-height:100vh}
+  .rail{background:var(--panel2);border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;padding:14px 0;gap:6px}
+  .rail .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--cyan),var(--blue));display:grid;place-items:center;color:#06121a;font-weight:700;margin-bottom:10px}
+  .rail a{width:40px;height:40px;border-radius:10px;display:grid;place-items:center;color:var(--muted);text-decoration:none;font-size:18px}
+  .rail a.on{background:#17222f;color:var(--cyan)} .rail a:hover{background:#17222f;color:var(--ink)}
+  .main{display:flex;flex-direction:column;min-width:0}
+  .bar{display:flex;align-items:center;gap:16px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel2)}
+  .bar h1{font-size:16px;margin:0;font-weight:600;letter-spacing:.3px}
+  .live{display:inline-flex;align-items:center;gap:7px;color:var(--green);font-size:12px;font-weight:600;letter-spacing:.08em}
+  .live .blip{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:p 1.8s infinite}
+  @keyframes p{0%{box-shadow:0 0 0 0 rgba(52,211,153,.5)}70%{box-shadow:0 0 0 7px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+  .bar .upd{margin-left:auto;color:var(--muted);font-size:12px;font-family:"JetBrains Mono",monospace}
+  .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;padding:16px;flex:1}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+  .card h2{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 12px;font-weight:600}
+  .mapwrap{grid-row:span 2;display:flex;flex-direction:column}
+  .map{flex:1;min-height:320px;border-radius:9px;overflow:hidden;background:
+    radial-gradient(1200px 400px at 30% -10%, rgba(34,211,238,.08), transparent),#0b1118;border:1px solid var(--line)}
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tile{background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:13px 14px}
+  .tile .n{font-family:"JetBrains Mono",monospace;font-size:26px;font-weight:700}
+  .tile .l{color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-top:3px}
+  .tile.cyan .n{color:var(--cyan)} .tile.green .n{color:var(--green)} .tile.amber .n{color:var(--amber)} .tile.red .n{color:var(--red)}
+  .feed{display:flex;flex-direction:column;gap:9px}
+  .ev{display:grid;grid-template-columns:auto 1fr auto;gap:10px;align-items:start;padding:9px;border-radius:9px;background:var(--panel2);border:1px solid var(--line)}
+  .ev .ic{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:13px}
+  .ev.critical .ic{background:rgba(251,113,133,.14);color:var(--red)}
+  .ev.warning .ic{background:rgba(245,158,11,.14);color:var(--amber)}
+  .ev.info .ic{background:rgba(96,165,250,.14);color:var(--blue)}
+  .ev .t{font-size:13px;line-height:1.4}
+  .ev .c{color:var(--muted);font-size:11px;font-family:"JetBrains Mono",monospace;margin-top:3px}
+  .ev .ago{color:var(--muted);font-size:11px;font-family:"JetBrains Mono",monospace;white-space:nowrap}
+  .legend{display:flex;gap:14px;padding:10px 4px 2px;color:var(--muted);font-size:11px;flex-wrap:wrap}
+  .legend i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle}
+  @media(max-width:860px){.grid{grid-template-columns:1fr}.mapwrap{grid-row:auto}}
+  @media(max-width:520px){.app{grid-template-columns:1fr}.rail{flex-direction:row;border-right:0;border-bottom:1px solid var(--line);overflow:auto}.rail .logo{margin:0 6px 0 0}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <div class="logo">А</div>
+    <a class="on" title="Дашборд">◱</a><a title="Автопарк">▦</a><a title="Водители">◍</a>
+    <a title="Задачи">⏱</a><a title="Журналы">≡</a><a title="Карта">◉</a>
+  </aside>
+  <div class="main">
+    <div class="bar">
+      <h1>ЦЕНТР МОНИТОРИНГА</h1>
+      <span class="live"><span class="blip"></span>LIVE</span>
+      <span class="upd" id="upd"></span>
+    </div>
+    <div class="grid">
+      <div class="card mapwrap">
+        <h2>Карта парка</h2>
+        <div class="map"><svg id="map" viewBox="0 0 100 70" preserveAspectRatio="xMidYMid slice" style="width:100%;height:100%"></svg></div>
+        <div class="legend">
+          <span><i style="background:#34d399"></i>в движении</span>
+          <span><i style="background:#60a5fa"></i>на связи, стоит</span>
+          <span><i style="background:#fb7185"></i>двигатель заблокирован</span>
+          <span><i style="background:#7d8b9c"></i>нет связи</span>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Статус парка</h2>
+        <div class="tiles" id="tiles"></div>
+      </div>
+      <div class="card">
+        <h2>Поток событий</h2>
+        <div class="feed" id="feed"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="data.js"></script>
+<script>
+  const f=window.FLEET,s=f.stats;
+  upd.textContent="обновлено "+f.updated;
+  tiles.innerHTML=[
+    ["cyan",s.cars,"машин в парке"],["green",s.online,"на линии"],
+    ["amber",s.overdue,"просрочка оплаты"],["red",s.alerts,"открытых алертов"]
+  ].map(([c,n,l])=>`<div class="tile ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  const icon={payment_overdue:"₽",command_unconfirmed:"↯",fines_threshold:"!",photo_overdue:"▣",odometer_untrusted:"↻"};
+  feed.innerHTML=f.alerts.map(a=>`<div class="ev ${a.sev}"><div class="ic">${icon[a.type]||"!"}</div>
+    <div><div class="t">${a.text}</div><div class="c">${a.car}</div></div><div class="ago">${a.ago}</div></div>`).join("");
+  // Карта: нормализуем координаты Бишкека в вьюбокс + сетка.
+  const lons=f.cars.map(c=>c.lon),lats=f.cars.map(c=>c.lat);
+  const lo=Math.min(...lons)-.01,hi=Math.max(...lons)+.01,la=Math.min(...lats)-.008,ha=Math.max(...lats)+.008;
+  const X=v=>(v-lo)/(hi-lo)*100, Y=v=>70-(v-la)/(ha-la)*70;
+  let g="";for(let i=1;i<10;i++)g+=`<line x1="${i*10}" y1="0" x2="${i*10}" y2="70" stroke="#16202c" stroke-width=".3"/>`;
+  for(let i=1;i<7;i++)g+=`<line x1="0" y1="${i*10}" x2="100" y2="${i*10}" stroke="#16202c" stroke-width=".3"/>`;
+  const col=c=>!c.online?"#7d8b9c":c.engine==="blocked"?"#fb7185":c.speed>0?"#34d399":"#60a5fa";
+  const pins=f.cars.map(c=>{const x=X(c.lon),y=Y(c.lat),k=col(c);
+    return `<circle cx="${x}" cy="${y}" r="2.4" fill="${k}"><title>${c.plate} · ${c.model}</title></circle>`+
+    (c.speed>0?`<circle cx="${x}" cy="${y}" r="4.2" fill="none" stroke="${k}" stroke-width=".4" opacity=".5"/>`:"");}).join("");
+  document.getElementById("map").innerHTML=g+pins;
+</script>
+</body>
+</html>

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дашборд · вариант 3 — плотный ops</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#eef1f5; --panel:#fff; --ink:#1b2733; --muted:#64748b; --line:#dfe4ea;
+    --head:#f1f4f8; --blue:#2563eb; --red:#dc2626; --amber:#d97706; --green:#059669; --zebra:#f8fafc;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;font-size:13px;font-variant-numeric:tabular-nums}
+  .app{display:grid;grid-template-columns:172px 1fr;min-height:100vh}
+  .side{background:#101828;color:#cbd5e1;padding:10px 8px}
+  .side .b{color:#fff;font-weight:700;font-size:14px;padding:8px 10px;letter-spacing:.3px}
+  .side a{display:block;padding:6px 10px;border-radius:6px;color:#9fb0c3;text-decoration:none;font-size:13px;margin:1px 0}
+  .side a.on{background:#1d2a3d;color:#fff} .side a:hover{background:#1d2a3d;color:#fff}
+  .side .grp{color:#5b6b7f;font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:12px 10px 4px}
+  .main{min-width:0;display:flex;flex-direction:column}
+  .tbar{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .tbar h1{font-size:15px;margin:0;font-weight:600}
+  .seg{display:flex;border:1px solid var(--line);border-radius:7px;overflow:hidden;margin-left:6px}
+  .seg button{border:0;background:#fff;padding:5px 11px;font:inherit;color:var(--muted);cursor:pointer;border-right:1px solid var(--line)}
+  .seg button:last-child{border-right:0}.seg button.on{background:var(--blue);color:#fff}
+  .search{margin-left:auto;border:1px solid var(--line);border-radius:7px;padding:6px 10px;font:inherit;width:200px;max-width:36vw}
+  .kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--line);border-bottom:1px solid var(--line)}
+  .kpi{background:var(--panel);padding:9px 12px}
+  .kpi .n{font-size:19px;font-weight:600;font-family:"IBM Plex Mono",monospace}
+  .kpi .l{color:var(--muted);font-size:11px;margin-top:1px;white-space:nowrap}
+  .kpi.r .n{color:var(--red)} .kpi.a .n{color:var(--amber)} .kpi.g .n{color:var(--green)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+  .wide{grid-column:1 / -1}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+  .panel .ph{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--line);font-weight:600;font-size:12px}
+  .panel .ph .cnt{color:var(--muted);font-weight:500}
+  table{width:100%;border-collapse:collapse}
+  th{position:sticky;top:0;background:var(--head);text-align:left;font-size:11px;letter-spacing:.03em;color:var(--muted);
+    font-weight:600;padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap;cursor:pointer}
+  th::after{content:"";margin-left:4px;color:#aab6c2}
+  td{padding:6px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+  tbody tr:nth-child(even){background:var(--zebra)}
+  tbody tr:hover{background:#eef5ff}
+  .mono{font-family:"IBM Plex Mono",monospace}
+  .pill{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;font-weight:600;border:1px solid}
+  .s-occupied{color:#1d4ed8;border-color:#bfdbfe;background:#eff6ff}
+  .s-free{color:#047857;border-color:#a7f3d0;background:#ecfdf5}
+  .s-overdue,.sev-critical{color:#b91c1c;border-color:#fecaca;background:#fef2f2}
+  .s-due,.sev-warning{color:#b45309;border-color:#fde68a;background:#fffbeb}
+  .s-paid{color:#047857;border-color:#a7f3d0;background:#ecfdf5}
+  .sev-info{color:#1d4ed8;border-color:#bfdbfe;background:#eff6ff}
+  .dim{color:var(--muted)}
+  .blk{color:var(--red);font-weight:600}
+  .wrapx{overflow-x:auto}
+  @media(max-width:1000px){.kpis{grid-template-columns:repeat(4,1fr)}.cols{grid-template-columns:1fr}}
+  @media(max-width:560px){.app{grid-template-columns:1fr}.side{display:flex;gap:4px;overflow:auto;padding:6px}.side .grp,.side .b{display:none}.kpis{grid-template-columns:repeat(2,1fr)}.search{width:120px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="b">▦ Автопарк</div>
+    <a class="on" href="#">Дашборд</a><a href="#">Автопарк</a><a href="#">Водители</a>
+    <div class="grp">Операции</div>
+    <a href="#">Объявления</a><a href="#">Задачи</a><a href="#">Отчёты</a>
+    <div class="grp">Журналы</div>
+    <a href="#">Аудит</a><a href="#">Прогоны</a><a href="#">Очередь</a><a href="#">Карта ↗</a>
+  </aside>
+  <div class="main">
+    <div class="tbar">
+      <h1>Дашборд</h1>
+      <div class="seg"><button class="on">Сегодня</button><button>7 дней</button><button>Месяц</button></div>
+      <input class="search" placeholder="Поиск по номеру / водителю…">
+    </div>
+    <div class="kpis" id="kpis"></div>
+    <div class="cols">
+      <div class="panel">
+        <div class="ph">Открытые алерты <span class="cnt" id="ac"></span></div>
+        <div class="wrapx"><table id="talerts"></table></div>
+      </div>
+      <div class="panel">
+        <div class="ph">Платежи сегодня <span class="cnt" id="pc"></span></div>
+        <div class="wrapx"><table id="tpays"></table></div>
+      </div>
+      <div class="panel wide">
+        <div class="ph">Парк <span class="cnt" id="fc"></span></div>
+        <div class="wrapx"><table id="tfleet"></table></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="data.js"></script>
+<script>
+  const f=window.FLEET,s=f.stats;
+  kpis.innerHTML=[
+    ["Машины",s.cars,""],["Заняты",s.occupied,""],["Свободны",s.free,"g"],["На линии",s.online,""],
+    ["Алерты",s.alerts,"r"],["Просрочка",s.overdue,"a"],["Сбор сегодня",s.collectedToday,"g"]
+  ].map(([l,n,c])=>`<div class="kpi ${c}"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  const sevRu={critical:"критич.",warning:"внимание",info:"инфо"};
+  ac.textContent=f.alerts.length;
+  talerts.innerHTML=`<thead><tr><th>Важн.</th><th>Событие</th><th>Машина</th><th>Когда</th></tr></thead><tbody>`+
+    f.alerts.map(a=>`<tr><td><span class="pill sev-${a.sev}">${sevRu[a.sev]}</span></td>
+      <td>${a.text}</td><td class="mono">${a.car}</td><td class="dim">${a.ago}</td></tr>`).join("")+`</tbody>`;
+  pc.textContent=f.payments.length;
+  tpays.innerHTML=`<thead><tr><th>Водитель</th><th>Машина</th><th>Сумма</th><th>Статус</th></tr></thead><tbody>`+
+    f.payments.map(p=>`<tr><td>${p.driver}</td><td class="mono">${p.plate}</td><td class="mono">${p.amount}</td>
+      <td><span class="pill s-${p.status}">${p.status==='overdue'?'просрочка':p.status==='due'?'к оплате':'оплачено'}</span></td></tr>`).join("")+`</tbody>`;
+  fc.textContent=f.cars.length+" машин";
+  tfleet.innerHTML=`<thead><tr><th>Номер</th><th>Модель</th><th>Статус</th><th>Водитель</th><th>Связь</th><th>Скор.</th><th>Двигатель</th></tr></thead><tbody>`+
+    f.cars.map(c=>`<tr><td class="mono">${c.plate}</td><td>${c.model}</td>
+      <td><span class="pill s-${c.status}">${c.status==='free'?'свободна':'занята'}</span></td>
+      <td>${c.driver||'<span class="dim">—</span>'}</td>
+      <td class="${c.online?'':'dim'}">${c.online?'на связи':'нет связи'}</td>
+      <td class="mono">${c.speed>0?c.speed+' км/ч':'—'}</td>
+      <td class="${c.engine==='blocked'?'blk':''}">${c.engine==='blocked'?'заблокирован':'в норме'}</td></tr>`).join("")+`</tbody>`;
+</script>
+</body>
+</html>

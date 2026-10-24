@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дашборд · вариант 1 — светлый минимализм</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#fbfbfa; --panel:#ffffff; --ink:#2f2e2b; --muted:#9b9a97;
+    --line:#eceae6; --accent:#375dfb; --red:#c0392b; --amber:#b9770e; --green:#2d7a46;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,sans-serif;
+    font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  a{color:inherit}
+  .top{display:flex;align-items:center;gap:14px;padding:14px 22px;border-bottom:1px solid var(--line);
+    position:sticky;top:0;background:rgba(251,251,250,.85);backdrop-filter:blur(8px);z-index:5}
+  .brand{font-weight:600;letter-spacing:-.2px}
+  .crumbs{color:var(--muted);font-size:14px}
+  .top nav{margin-left:auto;display:flex;gap:4px;flex-wrap:wrap}
+  .top nav a{padding:5px 10px;border-radius:7px;color:var(--muted);font-size:14px;text-decoration:none}
+  .top nav a.on{color:var(--ink);background:var(--line)}
+  .top nav a:hover{background:var(--line)}
+  .wrap{max-width:820px;margin:0 auto;padding:40px 22px 80px}
+  h1{font-family:Lora,serif;font-weight:600;font-size:34px;letter-spacing:-.5px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:14px;margin-bottom:34px}
+  .stats{display:flex;gap:38px;flex-wrap:wrap;padding-bottom:26px;border-bottom:1px solid var(--line);margin-bottom:34px}
+  .stat .n{font-size:30px;font-weight:600;letter-spacing:-.5px}
+  .stat .l{color:var(--muted);font-size:13px;margin-top:2px}
+  .stat .d{font-size:13px;margin-top:2px}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  h2{font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:38px 0 14px}
+  ul{list-style:none;margin:0;padding:0}
+  .alert{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+  .alert:last-child{border-bottom:0}
+  .dot{width:7px;height:7px;border-radius:50%;margin-top:8px;flex:0 0 auto;background:var(--muted)}
+  .dot.critical{background:var(--red)} .dot.warning{background:var(--amber)} .dot.info{background:var(--accent)}
+  .alert .txt{flex:1}
+  .alert .meta{color:var(--muted);font-size:13px;margin-top:2px}
+  .alert .ago{color:var(--muted);font-size:13px;white-space:nowrap}
+  .pay{display:flex;justify-content:space-between;gap:10px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .pay:last-child{border-bottom:0}
+  .pay .who{font-weight:500}.pay .car{color:var(--muted);font-size:13px}
+  .pay .amt{text-align:right;white-space:nowrap}
+  .tag{font-size:12px;color:var(--muted)}
+  .tag.overdue{color:var(--red)} .tag.paid{color:var(--green)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:46px}
+  @media(max-width:640px){.two{grid-template-columns:1fr;gap:10px}.stats{gap:24px}h1{font-size:28px}}
+</style>
+</head>
+<body>
+  <header class="top">
+    <span class="brand">Автопарк</span>
+    <span class="crumbs">/ Дашборд</span>
+    <nav>
+      <a class="on" href="#">Дашборд</a><a href="#">Автопарк</a><a href="#">Водители</a>
+      <a href="#">Объявления</a><a href="#">Задачи</a><a href="#">Журналы</a><a href="#">Карта ↗</a>
+    </nav>
+  </header>
+  <main class="wrap">
+    <h1>Дашборд</h1>
+    <div class="sub" id="sub"></div>
+    <div class="stats" id="stats"></div>
+
+    <h2>Открытые алерты</h2>
+    <ul id="alerts"></ul>
+
+    <div class="two">
+      <div>
+        <h2>Платежи сегодня</h2>
+        <ul id="pays"></ul>
+      </div>
+      <div>
+        <h2>Парк сейчас</h2>
+        <ul id="fleet"></ul>
+      </div>
+    </div>
+  </main>
+<script src="data.js"></script>
+<script>
+  const f = window.FLEET, s = f.stats;
+  sub.textContent = "Обновлено " + f.updated;
+  stats.innerHTML = [
+    ["Машины", s.cars, `${s.occupied} заняты · ${s.free} свободны`, ""],
+    ["Активные водители", s.drivers, `${s.online} на линии`, ""],
+    ["Открытые алерты", s.alerts, `${s.overdue} просрочка оплаты`, "neg"],
+    ["Собрано сегодня", s.collectedToday + " с", `за месяц ${s.collectedMonth} с`, "pos"],
+  ].map(([l,n,d,c])=>`<div class="stat"><div class="n">${n}</div><div class="l">${l}</div><div class="d ${c}">${d}</div></div>`).join("");
+  alerts.innerHTML = f.alerts.map(a=>`<li class="alert"><span class="dot ${a.sev}"></span>
+    <div class="txt">${a.text}<div class="meta">${a.car}</div></div><span class="ago">${a.ago}</span></li>`).join("");
+  pays.innerHTML = f.payments.map(p=>`<li class="pay"><div><div class="who">${p.who||p.driver}</div>
+    <div class="car">${p.plate}</div></div><div class="amt">${p.amount} с<div class="tag ${p.status}">${p.note}</div></div></li>`).join("");
+  fleet.innerHTML = f.cars.slice(0,8).map(c=>`<li class="pay"><div><div class="who">${c.plate}</div>
+    <div class="car">${c.model}${c.driver?" · "+c.driver:""}</div></div>
+    <div class="amt"><span class="tag ${c.status==='free'?'paid':''}">${c.status==='free'?'свободна':(c.engine==='blocked'?'двиг. заблок.':(c.speed>0?c.speed+' км/ч':'стоит'))}</span></div></li>`).join("");
+</script>
+</body>
+</html>
