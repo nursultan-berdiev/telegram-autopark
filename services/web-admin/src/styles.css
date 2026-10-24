@@ -97,3 +97,11 @@ ul.plain li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 
 .badge { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--border); }
 .badge.critical, .badge.error { background: var(--danger); color: #fff; }
+
+button.danger { color: var(--danger); border-color: var(--danger); background: var(--panel); }
+.actions-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+.row-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.row-actions button { padding: 3px 8px; font-size: 13px; }
+.action { display: inline-flex; align-items: center; gap: 6px; }
+.action .error { display: inline; padding: 0; font-size: 13px; }
+.action .info { display: inline; font-size: 13px; color: var(--muted); }

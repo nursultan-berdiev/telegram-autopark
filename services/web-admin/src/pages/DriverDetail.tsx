@@ -1,6 +1,7 @@
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
-import { Async, Card, fmtDate } from "../components/ui";
+import { api } from "../lib/api";
+import { ActionButton, Async, Card, fmtDate } from "../components/ui";
 import type { DriverWithStats, ScheduleWithStatus } from "../lib/types";
 
 export default function DriverDetail() {
@@ -26,6 +27,17 @@ export default function DriverDetail() {
             </dl>
           )}
         </Async>
+        {driver.data?.driver.active && (
+          <div className="actions-row">
+            <ActionButton
+              label="Уволить водителя"
+              confirm="Уволить водителя? Он открепится от машины."
+              danger
+              onAction={() => api.post(`/drivers/${id}/fire`)}
+              onDone={driver.reload}
+            />
+          </div>
+        )}
       </Card>
 
       <Card title="График платежей">

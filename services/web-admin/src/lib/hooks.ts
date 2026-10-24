@@ -6,6 +6,7 @@ export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     if (path == null) {
@@ -23,7 +24,8 @@ export function useApi<T>(path: string | null) {
     return () => {
       live = false;
     };
-  }, [path]);
+  }, [path, tick]);
 
-  return { data, error, loading };
+  // reload — перечитать после действия (мутации).
+  return { data, error, loading, reload: () => setTick((t) => t + 1) };
 }

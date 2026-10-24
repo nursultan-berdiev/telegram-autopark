@@ -1,7 +1,8 @@
 import { Link, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
-import { Async, Card, fmtDate } from "../components/ui";
-import type { Car, CarState, Command, Fine } from "../lib/types";
+import { api } from "../lib/api";
+import { ActionButton, Async, Card, fmtDate } from "../components/ui";
+import type { Car, CarState, Command, CommandResult, Fine } from "../lib/types";
 
 export default function CarDetail() {
   const { id } = useParams();
@@ -9,6 +10,32 @@ export default function CarDetail() {
   const state = useApi<CarState>(`/cars/${id}/state`);
   const commands = useApi<Command[]>(`/cars/${id}/commands`);
   const fines = useApi<Fine[]>(`/cars/${id}/fines`);
+
+  const refreshEngine = () => {
+    state.reload();
+    commands.reload();
+  };
+
+  // Возвращает строку-инфо (показывается у кнопки) или бросает ошибку.
+  const sendCommand = async (type: "engine_block" | "engine_unblock") => {
+    const res = await api.post<CommandResult>(`/cars/${id}/commands`, {
+      type,
+      arm_if_unsafe: type === "engine_block",
+    });
+    if (res.ok) return "Команда отправлена";
+    const st = res.command.status;
+    if (st === "armed") return "Взведено — сработает на безопасной остановке";
+    if (st === "sent" || st === "acked" || st === "unconfirmed") return "Команда уже в работе";
+    // Отказ гейта (blocked_by_safety) и т.п. — реальная неудача.
+    throw new Error(res.reason ?? "команда не выполнена");
+  };
+
+  const cancelArmed = async (cid: number) => {
+    // Команда могла уйти из armed (гонка с fire_armed) — тогда ok:false и
+    // двигатель фактически заблокирован; молча «успех» показывать нельзя.
+    const r = await api.post<CommandResult>(`/cars/${id}/commands/${cid}/cancel`);
+    if (!r.ok) throw new Error(r.reason ?? "не удалось отменить — проверьте статус");
+  };
 
   return (
     <>
@@ -31,17 +58,34 @@ export default function CarDetail() {
         </Async>
       </Card>
 
-      <Card title="Где машина">
+      <Card title="Где машина и двигатель">
         <Async loading={state.loading} error={state.error} data={state.data}>
           {(s) => (
-            <dl className="kv">
-              <dt>На связи</dt><dd>{s.online ? "да" : "нет"}</dd>
-              <dt>Зажигание</dt><dd>{s.ignition == null ? "—" : s.ignition ? "вкл" : "выкл"}</dd>
-              <dt>Двигатель</dt><dd>{s.engine_blocked ? "заблокирован" : "в норме"}</dd>
-              <dt>Координаты</dt>
-              <dd>{s.lat != null && s.lon != null ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : "—"}</dd>
-              <dt>Последняя точка</dt><dd>{fmtDate(s.last_ts)}</dd>
-            </dl>
+            <>
+              <dl className="kv">
+                <dt>На связи</dt><dd>{s.online ? "да" : "нет"}</dd>
+                <dt>Зажигание</dt><dd>{s.ignition == null ? "—" : s.ignition ? "вкл" : "выкл"}</dd>
+                <dt>Двигатель</dt><dd>{s.engine_blocked ? "заблокирован" : "в норме"}</dd>
+                <dt>Координаты</dt>
+                <dd>{s.lat != null && s.lon != null ? `${s.lat.toFixed(5)}, ${s.lon.toFixed(5)}` : "—"}</dd>
+                <dt>Последняя точка</dt><dd>{fmtDate(s.last_ts)}</dd>
+              </dl>
+              <div className="actions-row">
+                <ActionButton
+                  label="⛔ Заблокировать двигатель"
+                  confirm="Заблокировать двигатель? На едущей машине блокировка взведётся и сработает на ближайшей безопасной остановке."
+                  danger
+                  onAction={() => sendCommand("engine_block")}
+                  onDone={refreshEngine}
+                />
+                <ActionButton
+                  label="✅ Разблокировать"
+                  confirm="Разблокировать двигатель?"
+                  onAction={() => sendCommand("engine_unblock")}
+                  onDone={refreshEngine}
+                />
+              </div>
+            </>
           )}
         </Async>
       </Card>
@@ -50,7 +94,7 @@ export default function CarDetail() {
         <Async loading={fines.loading} error={fines.error} data={fines.data} empty="Штрафов нет">
           {(rows) => (
             <table>
-              <thead><tr><th>Сумма</th><th>Выписан</th><th>Статус</th><th>Оплачен</th></tr></thead>
+              <thead><tr><th>Сумма</th><th>Выписан</th><th>Статус</th><th>Оплачен</th><th></th></tr></thead>
               <tbody>
                 {rows.map((f) => (
                   <tr key={f.id}>
@@ -58,6 +102,18 @@ export default function CarDetail() {
                     <td>{fmtDate(f.issued_at)}</td>
                     <td>{f.status}</td>
                     <td>{f.paid_at ? fmtDate(f.paid_at) : "нет"}</td>
+                    <td className="row-actions">
+                      {!f.paid_at && (
+                        <ActionButton label="Оплачен" onAction={() => api.post(`/fines/${f.id}/pay`)} onDone={fines.reload} />
+                      )}
+                      <ActionButton
+                        label="Удалить"
+                        confirm="Удалить штраф?"
+                        danger
+                        onAction={() => api.del(`/fines/${f.id}`)}
+                        onDone={fines.reload}
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -70,7 +126,7 @@ export default function CarDetail() {
         <Async loading={commands.loading} error={commands.error} data={commands.data} empty="Команд не было">
           {(rows) => (
             <table>
-              <thead><tr><th>Тип</th><th>Статус</th><th>Источник</th><th>Когда</th></tr></thead>
+              <thead><tr><th>Тип</th><th>Статус</th><th>Источник</th><th>Когда</th><th></th></tr></thead>
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id}>
@@ -78,6 +134,16 @@ export default function CarDetail() {
                     <td>{c.status}</td>
                     <td>{c.source ?? "—"}</td>
                     <td>{fmtDate(c.created_at)}</td>
+                    <td className="row-actions">
+                      {c.status === "armed" && (
+                        <ActionButton
+                          label="Отменить ожидание"
+                          confirm="Отменить взведённую блокировку?"
+                          onAction={() => cancelArmed(c.id)}
+                          onDone={refreshEngine}
+                        />
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
