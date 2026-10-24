@@ -127,7 +127,7 @@ async def test_by_car(client, session):
 # --------------------------------------------------------------------------
 
 
-async def test_assistant_query_answers_from_snapshot(client, session, monkeypatch):
+async def test_assistant_query_answers_from_snapshot(admin_client, session, monkeypatch):
     car, driver = await _seed(session)
 
     captured = {}
@@ -141,7 +141,7 @@ async def test_assistant_query_answers_from_snapshot(client, session, monkeypatc
 
     monkeypatch.setattr(ai_gateway, "answer_owner_query", fake_answer)
 
-    resp = await client.post(
+    resp = await admin_client.post(
         "/assistant/query", json={"question": "Сколько машин свободно?"}
     )
     assert resp.status_code == 200
@@ -154,3 +154,11 @@ async def test_assistant_requires_auth(client):
     client.headers.pop("Authorization")
     resp = await client.post("/assistant/query", json={"question": "?"})
     assert resp.status_code == 401
+
+
+async def test_assistant_rejects_non_admin(client):
+    # Токен есть, но актор не из ADMIN_IDS → 403, как любое админ-действие.
+    resp = await client.post(
+        "/assistant/query", json={"question": "?"}, headers={"X-TG-User-Id": "999"}
+    )
+    assert resp.status_code == 403

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_core
+from app.auth import require_admin_actor
 from app.clients import ai_gateway
 from app.db.session import get_session
 from app.errors import DomainError
@@ -18,7 +18,9 @@ router = APIRouter()
 async def query(
     payload: AssistantQuery,
     session: AsyncSession = Depends(get_session),
-    _: str = Depends(require_core),
+    # Админ-гейт: веб-сессия (кука+CSRF) ЛИБО бот (токен+X-TG-User-Id).
+    # require_core на POST игнорировал бы куку — из веб-админки был бы 401.
+    _: int = Depends(require_admin_actor),
 ) -> AssistantAnswer:
     snapshot = await reports_domain.build_snapshot(session)
     # Через module-attribute (не прямой импорт функции) — иначе тесты не смогут

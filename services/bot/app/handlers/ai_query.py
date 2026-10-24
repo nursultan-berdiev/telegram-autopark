@@ -32,7 +32,7 @@ async def ai_answer(message: Message, state: FSMContext, api: ApiClient) -> None
     await message.answer("⏳ Думаю...")
 
     try:
-        result = await api.assistant_query(question)
+        result = await api.assistant_query(question, tg_id=message.from_user.id)
     except ApiError as exc:
         logger.warning("Ошибка ИИ-запроса: %s", exc)
         await state.clear()
