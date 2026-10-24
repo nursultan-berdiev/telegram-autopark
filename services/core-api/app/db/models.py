@@ -675,6 +675,32 @@ class AdminLoginToken(Base):
     )
 
 
+class AuditLog(Base):
+    """Единая лента действий администратора: кто, что, когда.
+
+    Пишется централизованно (middleware) на успешных админ-мутациях — и из
+    бота, и из веб-админки, т.к. оба ходят через одни эндпойнты. Раньше след
+    «кто нажал» был размазан по доменным колонкам (`Command.requested_by`,
+    `created_by` и т.п.); здесь — общий журнал. Храним шаблон маршрута и
+    path-параметры, а не тело запроса: тела бывают с секретами/большие.
+    """
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    actor_tg_user_id: Mapped[int | None] = mapped_column(
+        BigInteger, nullable=True, index=True
+    )
+    source: Mapped[str] = mapped_column(String(8))  # bot | web
+    method: Mapped[str] = mapped_column(String(8))
+    path: Mapped[str] = mapped_column(String(128))  # шаблон маршрута (/cars/{car_id}/...)
+    status_code: Mapped[int] = mapped_column(Integer)
+    params: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # path-параметры
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+
+
 class OutboundMessage(Base):
     """Очередь исходящих сообщений в Telegram.
 

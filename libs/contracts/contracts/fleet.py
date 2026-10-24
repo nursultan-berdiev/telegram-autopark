@@ -137,6 +137,7 @@ class TaskRunDTO(DTO):
     finished_at: datetime | None = None
     detail: str | None = None
     payload: dict | None = None
+    requested_by: int | None = None  # кто запустил прогон кнопкой; у крона пусто
 
 
 class MaintenanceDTO(DTO):

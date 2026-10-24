@@ -48,6 +48,7 @@ async def client(session_maker):
     """HTTP-клиент поверх ASGI: та же БД в памяти, что и у фикстуры session."""
     import httpx
 
+    import app.audit as audit_module
     from app.db.session import get_session
     from app.main import app
 
@@ -56,6 +57,11 @@ async def client(session_maker):
             yield s
 
     app.dependency_overrides[get_session] = _override
+    # Аудит-middleware открывает свою сессию через app.audit.async_session_maker —
+    # нацеливаем её на ту же тестовую БД, иначе запись аудита уходила бы в другую
+    # :memory: (и была бы не видна фикстуре session).
+    _orig_maker = audit_module.async_session_maker
+    audit_module.async_session_maker = session_maker
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport,
@@ -63,6 +69,7 @@ async def client(session_maker):
         headers={"Authorization": f"Bearer {CORE_TOKEN}"},
     ) as c:
         yield c
+    audit_module.async_session_maker = _orig_maker
     app.dependency_overrides.clear()
 
 
