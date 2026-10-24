@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     adapter_url: str = Field(default="", alias="ADAPTER_URL")
     adapter_token: str = Field(default="", alias="ADAPTER_TOKEN")
 
+    # Медиа-сервер бота: байты файлов Telegram (file_id) для веб-админки. Внутри
+    # сети, тем же CORE_API_TOKEN, что бот принимает на своей стороне.
+    bot_media_url: str = Field(default="http://bot:8081", alias="BOT_MEDIA_URL")
+    bot_media_timeout_seconds: float = Field(default=30.0, alias="BOT_MEDIA_TIMEOUT_SECONDS")
+
     # --- ИИ (переехало из бота) ----------------------------------------------
     ai_backend: str = Field(default="auto", alias="AI_BACKEND")
     ai_timeout_seconds: float = Field(default=120.0, alias="AI_TIMEOUT_SECONDS")
