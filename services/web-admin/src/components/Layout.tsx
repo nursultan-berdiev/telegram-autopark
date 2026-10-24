@@ -12,6 +12,7 @@ const NAV = [
   { to: "/drivers", label: "Водители", icon: "◍" },
   { to: "/announcements", label: "Объявления", icon: "◎" },
   { to: "/periodic", label: "Задачи", icon: "◴" },
+  { to: "/documents", label: "Документы", icon: "◲" },
   { to: "/reports", label: "Отчёты", icon: "▤" },
   { to: "/journals", label: "Журналы", icon: "≡" },
 ];

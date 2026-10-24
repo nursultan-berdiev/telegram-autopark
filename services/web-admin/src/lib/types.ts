@@ -217,3 +217,17 @@ export interface PeriodicTask {
   total_run_count: number;
   created_at: string | null;
 }
+
+// Соответствует DocumentDTO (libs/contracts/contracts/documents.py).
+// file_kind: "photo" (фото из Telegram = jpeg) | "document" (файл: может быть
+// картинкой или PDF). car_id=null — общий документ парка.
+export interface Document {
+  id: number;
+  car_id: number | null;
+  title: string;
+  file_kind: string;
+  file_name: string | null;
+  file_size: number | null;
+  created_by: number;
+  created_at: string | null;
+}
