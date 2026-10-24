@@ -71,3 +71,11 @@ class TrackerProvider(ABC):
     ) -> dict:
         """Возвращает {status: sent|failed, result: <ответ трекера/провайдера>}."""
         ...
+
+    async def create_session_token(self, *, ttl_seconds: int) -> str:
+        """Короткоживущий токен входа в UI провайдера (SSO из веб-админки).
+
+        Не абстрактный: SSO есть не у всех провайдеров. По умолчанию — отказ,
+        его адаптер отдаёт как 501.
+        """
+        raise NotImplementedError(f"{self.name} не поддерживает SSO-токен")

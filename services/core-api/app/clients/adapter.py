@@ -31,3 +31,26 @@ async def send_command(external_id: str, command: str, params: dict | None = Non
     if response.status_code >= 400:
         raise AdapterError(f"адаптер вернул {response.status_code}: {response.text[:200]}")
     return response.json()
+
+
+async def create_sso_token() -> str:
+    """Короткоживущий токен входа в UI Traccar (SSO карты). Traccar-креды — у адаптера."""
+    if not settings.adapter_url:
+        raise AdapterError("ADAPTER_URL не задан")
+    url = f"{settings.adapter_url.rstrip('/')}/sso-token"
+    headers = {"Authorization": f"Bearer {settings.adapter_token}"}
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, headers=headers)
+    except httpx.HTTPError as exc:
+        raise AdapterError(f"адаптер недоступен: {exc}") from exc
+    if response.status_code >= 400:
+        raise AdapterError(f"адаптер вернул {response.status_code}")
+    try:
+        token = response.json()["token"]
+    except (ValueError, KeyError) as exc:
+        # 200 без JSON или без ключа token — не 500, а понятный 502 выше по стеку.
+        raise AdapterError("адаптер вернул некорректный ответ sso-token") from exc
+    if not token:
+        raise AdapterError("адаптер вернул пустой токен")
+    return token

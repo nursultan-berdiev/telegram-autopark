@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     traccar_user: str = Field(alias="TRACCAR_USER")
     traccar_password: str = Field(alias="TRACCAR_PASSWORD")
     traccar_ws_enabled: bool = Field(default=True, alias="TRACCAR_WS_ENABLED")
+    # Срок токена SSO (автологин в UI Traccar из веб-админки). Короткий: токен
+    # пускает любого, у кого он есть; 60 с хватает на переход по ссылке.
+    sso_token_ttl_seconds: int = Field(default=60, alias="TRACCAR_SSO_TTL_SECONDS")
 
     telemetry_batch_size: int = Field(default=50, alias="TELEMETRY_BATCH_SIZE")
     telemetry_flush_seconds: float = Field(default=10.0, alias="TELEMETRY_FLUSH_SECONDS")

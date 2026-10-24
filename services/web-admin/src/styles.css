@@ -48,6 +48,12 @@ a:hover { text-decoration: underline; }
 .sidebar nav a.active { background: var(--accent); color: #fff; }
 .sidebar nav a:hover { text-decoration: none; background: var(--border); }
 .nav-disabled { color: var(--muted); font-size: 14px; cursor: default; }
+.sidebar nav .nav-map {
+  text-align: left; width: 100%; border: none; background: none; color: var(--text);
+  padding: 8px 10px; border-radius: 8px; cursor: pointer; font: inherit;
+}
+.sidebar nav .nav-map:hover:not(:disabled) { background: var(--border); }
+.sidebar nav .nav-map:disabled { color: var(--muted); cursor: default; }
 
 .content { display: flex; flex-direction: column; min-width: 0; }
 .topbar {

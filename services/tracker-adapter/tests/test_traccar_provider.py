@@ -105,6 +105,24 @@ async def test_send_command_failure_reports_failed_status():
 # --- резолв uniqueId -> deviceId --------------------------------------------------
 
 
+async def test_create_session_token_posts_expiration_and_returns_token():
+    captured: dict = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/session":
+            return _session_ok(request)
+        if request.url.path == "/api/session/token" and request.method == "POST":
+            captured["body"] = request.content.decode()
+            return httpx.Response(200, text="THE-TOKEN\n")
+        return httpx.Response(404)
+
+    provider = _make_provider(handler)
+    token = await provider.create_session_token(ttl_seconds=120)
+
+    assert token == "THE-TOKEN"  # хвостовой перевод строки обрезаем
+    assert "expiration=" in captured["body"], "Traccar 6.14.5 без expiration отвечает ошибкой"
+
+
 async def test_resolve_device_id_caches_devices_list():
     calls = {"devices": 0}
 
