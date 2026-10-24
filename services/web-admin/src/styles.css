@@ -324,3 +324,19 @@ select.field { height: 34px; }
 @media (max-width: 560px) {
   .card-media-row .photo { width: 100%; }
 }
+
+/* ===== Фотоконтроль: альбом по ракурсам ===== */
+.album { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.shot { margin: 0; }
+.shot-img {
+  width: 100%; aspect-ratio: 4 / 3; object-fit: cover; display: block;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--soft);
+}
+.shot-empty {
+  width: 100%; aspect-ratio: 4 / 3; border-radius: 12px; border: 1px dashed var(--border);
+  background: var(--soft); color: var(--muted); font-size: 13px;
+  display: grid; place-items: center;
+}
+.shot figcaption { margin-top: 6px; color: var(--muted); font-size: 13px; text-align: center; }
+@media (max-width: 760px) { .album { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px) { .album { grid-template-columns: 1fr; } }

@@ -4,7 +4,7 @@ import { useApi } from "../lib/hooks";
 import { api } from "../lib/api";
 import { ActionButton, Async, Card, fmtDate } from "../components/ui";
 import { MediaImage } from "../components/Media";
-import type { DriverWithStats, Schedule, ScheduleWithStatus } from "../lib/types";
+import type { DriverWithStats, PhotoInspection, Schedule, ScheduleWithStatus } from "../lib/types";
 
 // Конвенция парка: дедлайн оплаты — 22:00 по Бишкеку.
 const DUE_TIME_SUFFIX = "T22:00:00+06:00";
@@ -116,6 +116,7 @@ export default function DriverDetail() {
   const { id } = useParams();
   const driver = useApi<DriverWithStats>(`/drivers/${id}`);
   const schedule = useApi<ScheduleWithStatus>(`/drivers/${id}/schedule`);
+  const inspections = useApi<PhotoInspection[]>(`/drivers/${id}/photo-inspections`);
 
   return (
     <>
@@ -174,6 +175,34 @@ export default function DriverDetail() {
               )}
               <ScheduleForm driverId={id!} current={s.schedule} onSaved={schedule.reload} />
             </>
+          )}
+        </Async>
+      </Card>
+
+      <Card title="Фотоконтроль">
+        <Async
+          loading={inspections.loading}
+          error={inspections.error}
+          data={inspections.data}
+          empty="Осмотров нет"
+        >
+          {(rows) => (
+            <table>
+              <thead>
+                <tr><th>Когда</th><th>Замечания</th><th></th></tr>
+              </thead>
+              <tbody>
+                {rows.map((i) => (
+                  <tr key={i.id} className={i.has_issues ? "overdue" : ""}>
+                    <td>{fmtDate(i.created_at)}</td>
+                    <td>{i.has_issues ? "есть" : "нет"}</td>
+                    <td className="row-actions">
+                      <Link to={`/photo-inspections/${i.id}`}>Открыть альбом</Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </Async>
       </Card>
