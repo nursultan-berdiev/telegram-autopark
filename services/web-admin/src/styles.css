@@ -105,3 +105,16 @@ button.danger { color: var(--danger); border-color: var(--danger); background: v
 .action { display: inline-flex; align-items: center; gap: 6px; }
 .action .error { display: inline; padding: 0; font-size: 13px; }
 .action .info { display: inline; font-size: 13px; color: var(--muted); }
+
+.field {
+  width: 100%; font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; resize: vertical;
+}
+.field-counter { text-align: right; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.field-counter .over { color: var(--danger); font-weight: 600; }
+.preview {
+  margin-top: 10px; padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg);
+}
+.preview-body { white-space: pre-wrap; margin-top: 6px; }
+td.wrap { white-space: pre-wrap; max-width: 480px; }
