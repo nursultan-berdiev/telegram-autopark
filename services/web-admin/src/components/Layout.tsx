@@ -14,6 +14,7 @@ const NAV = [
   { to: "/periodic", label: "Задачи", icon: "◴" },
   { to: "/documents", label: "Документы", icon: "◲" },
   { to: "/photo-inspections", label: "Фотоконтроль", icon: "▣" },
+  { to: "/assistant", label: "Ассистент", icon: "◈" },
   { to: "/reports", label: "Отчёты", icon: "▤" },
   { to: "/journals", label: "Журналы", icon: "≡" },
 ];

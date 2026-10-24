@@ -86,6 +86,7 @@ ADMIN_CALLS = [
         ),
     ),
     ("delete_document", lambda api: api.delete_document(1, tg_id=ACTOR)),
+    ("assistant_query", lambda api: api.assistant_query("вопрос", tg_id=ACTOR)),
     # Не админский вызов, но актор обязателен так же: по нему core-api находит водителя.
     (
         "submit_photo_inspection",

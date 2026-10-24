@@ -263,3 +263,8 @@ export interface PhotoInspection {
   comment: string | null;
   created_at: string | null;
 }
+
+// Соответствует AssistantAnswer (libs/contracts/contracts/reports.py).
+export interface AssistantAnswer {
+  answer: string;
+}

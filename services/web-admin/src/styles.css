@@ -340,3 +340,6 @@ select.field { height: 34px; }
 .shot figcaption { margin-top: 6px; color: var(--muted); font-size: 13px; text-align: center; }
 @media (max-width: 760px) { .album { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 460px) { .album { grid-template-columns: 1fr; } }
+
+/* ===== Ассистент ===== */
+.answer { white-space: pre-wrap; line-height: 1.55; }

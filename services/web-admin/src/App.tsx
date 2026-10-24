@@ -12,6 +12,7 @@ import Periodic from "./pages/Periodic";
 import Documents from "./pages/Documents";
 import PhotoInspections from "./pages/PhotoInspections";
 import InspectionAlbum from "./pages/InspectionAlbum";
+import Assistant from "./pages/Assistant";
 import Reports from "./pages/Reports";
 import Journals from "./pages/Journals";
 
@@ -32,6 +33,7 @@ function Gate() {
         <Route path="documents" element={<Documents />} />
         <Route path="photo-inspections" element={<PhotoInspections />} />
         <Route path="photo-inspections/:id" element={<InspectionAlbum />} />
+        <Route path="assistant" element={<Assistant />} />
         <Route path="reports" element={<Reports />} />
         <Route path="journals" element={<Journals />} />
         <Route path="*" element={<Navigate to="/" replace />} />
