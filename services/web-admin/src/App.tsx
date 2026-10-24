@@ -10,6 +10,8 @@ import DriverDetail from "./pages/DriverDetail";
 import Announcements from "./pages/Announcements";
 import Periodic from "./pages/Periodic";
 import Documents from "./pages/Documents";
+import PhotoInspections from "./pages/PhotoInspections";
+import InspectionAlbum from "./pages/InspectionAlbum";
 import Reports from "./pages/Reports";
 import Journals from "./pages/Journals";
 
@@ -28,6 +30,8 @@ function Gate() {
         <Route path="announcements" element={<Announcements />} />
         <Route path="periodic" element={<Periodic />} />
         <Route path="documents" element={<Documents />} />
+        <Route path="photo-inspections" element={<PhotoInspections />} />
+        <Route path="photo-inspections/:id" element={<InspectionAlbum />} />
         <Route path="reports" element={<Reports />} />
         <Route path="journals" element={<Journals />} />
         <Route path="*" element={<Navigate to="/" replace />} />

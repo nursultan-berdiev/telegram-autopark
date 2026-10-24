@@ -231,3 +231,35 @@ export interface Document {
   created_by: number;
   created_at: string | null;
 }
+
+// Соответствует PhotoStatusDTO (libs/contracts/contracts/photo.py).
+// next_due_on — локальная дата парка (YYYY-MM-DD); overdue_days 0 — не просрочен.
+export interface PhotoStatus {
+  driver_id: number;
+  driver_name: string;
+  car_id: number;
+  car_plate: string;
+  next_due_on: string;
+  overdue_days: number;
+  last_inspection_id: number | null;
+  last_inspection_at: string | null;
+}
+
+// Соответствует PhotoInspectionDTO. Боков (left/right) может не быть у старых
+// осмотров — тогда null (показывать нечего).
+export interface PhotoInspection {
+  id: number;
+  driver_id: number;
+  driver_name: string | null;
+  car_id: number | null;
+  car_plate: string | null;
+  front_file_id: string;
+  left_file_id: string | null;
+  rear_file_id: string;
+  right_file_id: string | null;
+  interior_front_file_id: string;
+  interior_rear_file_id: string;
+  has_issues: boolean;
+  comment: string | null;
+  created_at: string | null;
+}
