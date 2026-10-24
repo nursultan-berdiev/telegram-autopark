@@ -27,16 +27,35 @@ def _bearer(authorization: str | None) -> str:
     return authorization.split(" ", 1)[1].strip()
 
 
-async def require_core(authorization: str | None = Header(default=None)) -> str:
+async def _assert_core_token(authorization: str | None) -> None:
+    """Строгая проверка сервисного токена (без веб-куки). 401/403 как и прежде."""
     token = _bearer(authorization)
     if settings.core_api_token and token == settings.core_api_token:
-        return "core"
+        return
     if settings.ingest_token and token == settings.ingest_token:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="INGEST_TOKEN не даёт прав на доменные вызовы",
         )
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="неверный токен")
+
+
+async def require_core(
+    request: Request,
+    authorization: str | None = Header(default=None),
+    autopark_admin: str | None = Cookie(default=None),
+) -> str:
+    """Доменный доступ: сервисный токен (бот) ЛИБО — ТОЛЬКО на безопасных методах
+    (GET/HEAD/OPTIONS) — админ-кука веб-админки, чтобы SPA читал теми же GET-ами.
+
+    На мутациях под require_core (outbox/alerts/регистрация/платежи) кука
+    игнорируется и нужен токен: ambient-кука не должна инициировать запись (CSRF).
+    Админ-мутации идут через require_admin_actor (там своя CSRF-защита).
+    """
+    if request.method in _SAFE_METHODS and admin_from_cookie(autopark_admin) is not None:
+        return "web-admin"
+    await _assert_core_token(authorization)
+    return "core"
 
 
 async def require_ingest(authorization: str | None = Header(default=None)) -> str:
@@ -121,7 +140,7 @@ async def require_admin_actor(
         audit.mark(request.scope, web_tg, audit.SOURCE_WEB)
         return web_tg
     # Путь бота/сервиса — строго CORE_API_TOKEN + актёр-админ.
-    await require_core(authorization)
+    await _assert_core_token(authorization)
     admin = _admin_or_403(actor)
     audit.mark(request.scope, admin, audit.SOURCE_BOT)
     return admin

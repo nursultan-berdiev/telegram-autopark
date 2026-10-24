@@ -47,6 +47,26 @@ async def test_non_admin_cookie_rejected(client):
     assert r.status_code in (401, 403)
 
 
+# --- Чтение домена по админ-куке (viewer) -----------------------------------
+async def test_cookie_viewer_reads_domain_get(client):
+    cars = await client.get("/cars", headers=_web())
+    assert cars.status_code == 200
+    rep = await client.get("/reports/cars-drivers", headers=_web())
+    assert rep.status_code == 200
+
+
+async def test_cookie_cannot_do_require_core_mutation(client):
+    # require_core POST (сервисный, не админский) по куке без токена → 401:
+    # кука пускает только на безопасные методы, запись требует токен.
+    r = await client.post("/outbox/1/sent", headers=_web(csrf=True))
+    assert r.status_code == 401
+
+
+async def test_non_admin_cookie_cannot_read_domain(client):
+    r = await client.get("/cars", headers=_web(NOT_ADMIN))
+    assert r.status_code in (401, 403)
+
+
 # --- Куки-ветка не перехватывает путь бота ----------------------------------
 async def test_non_admin_cookie_falls_back_to_bot(client, admin_headers):
     headers = {**admin_headers, "Cookie": f"{COOKIE_NAME}={issue(NOT_ADMIN)}"}
