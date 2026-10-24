@@ -21,10 +21,29 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   if (res.status === 204) return undefined as T;
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    const detail = body && typeof body === "object" && "detail" in body ? String(body.detail) : res.statusText;
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, errorText(body, res.statusText));
   }
   return body as T;
+}
+
+// FastAPI на 422 кладёт в detail массив {loc,msg,...}; String(массив) дал бы
+// «[object Object]». Разворачиваем в читаемый текст, строку отдаём как есть.
+function errorText(body: unknown, fallback: string): string {
+  if (body && typeof body === "object" && "detail" in body) {
+    const detail = (body as { detail: unknown }).detail;
+    if (typeof detail === "string") return detail;
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item) =>
+          item && typeof item === "object" && "msg" in item
+            ? String((item as { msg: unknown }).msg)
+            : String(item),
+        )
+        .join("; ");
+    }
+    if (detail != null) return String(detail);
+  }
+  return fallback;
 }
 
 function withBody<T>(method: string, path: string, data?: unknown) {
@@ -38,5 +57,6 @@ function withBody<T>(method: string, path: string, data?: unknown) {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) => withBody<T>("POST", path, data),
+  put: <T>(path: string, data?: unknown) => withBody<T>("PUT", path, data),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

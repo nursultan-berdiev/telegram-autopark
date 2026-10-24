@@ -32,6 +32,15 @@ describe("api: слияние заголовков", () => {
     expect(init.body).toBeUndefined();
   });
 
+  it("PUT с телом: метод PUT, Content-Type и X-Requested-With", async () => {
+    await api.put("/drivers/1/schedule", { amount: "1800" });
+    const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+    const headers = init.headers as Record<string, string>;
+    expect(init.method).toBe("PUT");
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(headers["X-Requested-With"]).toBe("fleet-admin");
+  });
+
   it("DELETE: метод DELETE, без тела и Content-Type, 204 → undefined", async () => {
     const r = await api.del("/fines/1");
     const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
@@ -40,5 +49,21 @@ describe("api: слияние заголовков", () => {
     expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
     expect(init.body).toBeUndefined();
     expect(r).toBeUndefined();
+  });
+
+  it("422 с массивом detail разворачивается в текст, не [object Object]", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ detail: [{ loc: ["body", "amount"], msg: "сумма должна быть больше нуля" }] }),
+            { status: 422, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    await expect(api.post("/drivers/1/schedule", { amount: "0" })).rejects.toThrow(
+      "сумма должна быть больше нуля",
+    );
   });
 });
