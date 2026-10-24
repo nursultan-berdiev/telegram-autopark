@@ -15,6 +15,7 @@
   --rose: #f43f5e;
   --sky: #0ea5e9;
   --shadow: 0 10px 30px -12px rgba(39, 44, 94, 0.18);
+  --z-dropdown: 50; /* выпадашки поверх залипающего топбара (z-index: 20) */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -114,12 +115,29 @@ a:hover { text-decoration: underline; }
   border-radius: 11px; width: 40px; height: 40px; font-size: 18px; cursor: pointer;
   color: var(--text); padding: 0;
 }
+.searchbox { position: relative; flex: 1; max-width: 420px; }
 .search {
-  flex: 1; max-width: 420px; display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; width: 100%;
   background: var(--soft); border: 1px solid var(--border);
   border-radius: 12px; padding: 9px 13px; color: var(--muted);
 }
 .search input { border: 0; background: none; outline: none; font: inherit; color: var(--text); width: 100%; padding: 0; }
+.search-results {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: var(--z-dropdown);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: var(--shadow); padding: 6px; max-height: 60vh; overflow: auto;
+}
+.search-hit {
+  display: flex; align-items: center; gap: 10px; width: 100%; text-align: left;
+  border: none; background: none; padding: 9px 10px; border-radius: 9px;
+  cursor: pointer; color: var(--text); font: inherit;
+}
+.search-hit:hover { background: var(--soft); }
+.search-hit .i { width: 20px; text-align: center; color: var(--muted); flex: 0 0 auto; }
+.search-hit-main { display: flex; flex-direction: column; min-width: 0; }
+.search-hit-title { font-weight: 600; }
+.search-hit-sub { color: var(--muted); font-size: 12px; }
+.search-empty { padding: 10px; color: var(--muted); font-size: 13px; }
 .topbar .sp { flex: 1; }
 .iconbtn {
   position: relative; width: 40px; height: 40px; border-radius: 12px; flex: 0 0 auto;
@@ -127,9 +145,12 @@ a:hover { text-decoration: underline; }
   display: grid; place-items: center; color: var(--text); padding: 0;
 }
 .iconbtn .dot {
-  position: absolute; top: 8px; right: 9px; width: 8px; height: 8px;
-  border-radius: 50%; background: var(--rose); border: 2px solid var(--panel);
+  position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px;
+  padding: 0 4px; border-radius: 8px; background: var(--rose); border: 2px solid var(--panel);
+  color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
+  display: grid; place-items: center;
 }
+.iconbtn .dot.err { background: var(--amber); } /* сбой загрузки алертов — не красный «есть N» */
 
 .page { padding: 24px; max-width: 1180px; width: 100%; }
 h1 { font-size: 22px; margin: 0 0 16px; }
@@ -276,6 +297,6 @@ select.field { height: 34px; }
 @media (max-width: 560px) {
   .dash .hero { grid-template-columns: 1fr; }
   .dash .fleet { grid-template-columns: 1fr; }
-  .search { max-width: none; }
+  .searchbox { max-width: none; }
   .page { padding: 16px; }
 }

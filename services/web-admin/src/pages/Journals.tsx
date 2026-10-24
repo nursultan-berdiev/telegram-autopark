@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { Async, fmtDate } from "../components/ui";
 import type { AuditRow, OutboundRow, TaskRun, Alert } from "../lib/types";
@@ -19,7 +19,13 @@ function outState(m: OutboundRow): string {
 }
 
 export default function Journals() {
-  const [tab, setTab] = useState<Tab>("audit");
+  // Вкладка — производная от URL (?tab=), не локальный state: иначе переход на
+  // уже открытый /journals (колокольчик → ?tab=alerts) не переключал бы её,
+  // т.к. компонент не перемонтируется. Переключение пишет query через setParams.
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("tab");
+  const tab: Tab = TABS.some((t) => t.key === requested) ? (requested as Tab) : "audit";
+  const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
   const audit = useApi<AuditRow[]>(tab === "audit" ? "/audit?limit=200" : null);
   const runs = useApi<TaskRun[]>(tab === "task-runs" ? "/task-runs?limit=100" : null);
   const out = useApi<OutboundRow[]>(tab === "outbound" ? "/outbound-messages?limit=200" : null);
