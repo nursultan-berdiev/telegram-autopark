@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
 
 // Загрузка одного GET-ресурса. path=null — не грузить (условные запросы).
@@ -26,6 +26,8 @@ export function useApi<T>(path: string | null) {
     };
   }, [path, tick]);
 
-  // reload — перечитать после действия (мутации).
-  return { data, error, loading, reload: () => setTick((t) => t + 1) };
+  // reload — перечитать после действия (мутации) или по таймеру/фокусу.
+  // Стабильная ссылка (useCallback), чтобы её можно было класть в deps эффектов.
+  const reload = useCallback(() => setTick((t) => t + 1), []);
+  return { data, error, loading, reload };
 }
