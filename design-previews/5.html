@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Дашборд · вариант 5 — мягкие карточки + сайдбар</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f5f6fb; --panel:#ffffff; --ink:#1f2340; --muted:#8a90ad; --line:#eef0f7;
+    --indigo:#6366f1; --teal:#14b8a6; --amber:#f59e0b; --rose:#f43f5e; --sky:#0ea5e9;
+    --shadow:0 10px 30px -12px rgba(39,44,94,.18);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:"Plus Jakarta Sans",system-ui,sans-serif;font-size:14px}
+  a{text-decoration:none;color:inherit}
+  .shell{display:grid;grid-template-columns:244px 1fr;min-height:100vh}
+
+  /* Сайдбар */
+  .sidebar{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;
+    padding:18px 14px;position:sticky;top:0;height:100vh}
+  .logo{display:flex;align-items:center;gap:10px;font-weight:800;font-size:17px;padding:4px 8px 18px}
+  .logo .m{width:34px;height:34px;border-radius:11px;background:linear-gradient(135deg,var(--indigo),var(--sky));display:grid;place-items:center;color:#fff}
+  .nav{display:flex;flex-direction:column;gap:3px}
+  .nav a{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:12px;color:var(--muted);font-weight:600;font-size:14px}
+  .nav a .i{width:20px;text-align:center;font-size:16px;opacity:.9}
+  .nav a.on{background:#eef0ff;color:var(--indigo)}
+  .nav a:hover{background:#f3f4fb;color:var(--ink)}
+  .nav .sep{height:1px;background:var(--line);margin:10px 6px}
+  .nav a.map{color:var(--indigo)}
+  .side-foot{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid var(--line)}
+  .side-foot .av{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--sky));display:grid;place-items:center;color:#fff;font-weight:700;flex:0 0 auto}
+  .side-foot .who{font-weight:700;font-size:13.5px;line-height:1.2}.side-foot .role{color:var(--muted);font-size:12px}
+
+  /* Верхняя полоса: НЕ навигация — только бургер(моб.), поиск, уведомления, профиль */
+  .main{min-width:0;display:flex;flex-direction:column}
+  .topbar{display:flex;align-items:center;gap:12px;padding:12px 24px;background:var(--panel);border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20}
+  .burger{display:none;border:1px solid var(--line);background:#fff;border-radius:11px;width:40px;height:40px;font-size:18px;cursor:pointer}
+  .search{flex:1;max-width:420px;display:flex;align-items:center;gap:9px;background:#f3f4fb;border:1px solid var(--line);
+    border-radius:12px;padding:9px 13px;color:var(--muted)}
+  .search input{border:0;background:none;outline:none;font:inherit;color:var(--ink);width:100%}
+  .topbar .sp{flex:1}
+  .iconbtn{position:relative;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:#fff;cursor:pointer;
+    display:grid;place-items:center;font-size:17px;color:var(--ink)}
+  .iconbtn .dot{position:absolute;top:8px;right:9px;width:8px;height:8px;border-radius:50%;background:var(--rose);border:2px solid #fff}
+  .topbar .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--teal),var(--sky));display:grid;place-items:center;color:#fff;font-weight:700}
+
+  .wrap{padding:24px;max-width:1180px;width:100%}
+  .head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:18px}
+  h1{font-size:26px;font-weight:800;margin:0;letter-spacing:-.4px}
+  .head .u{color:var(--muted);font-size:13px}
+  .hero{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+  .sc{border-radius:18px;padding:16px 18px;color:#fff;box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .sc .ic{position:absolute;right:-6px;top:-6px;font-size:58px;opacity:.18}
+  .sc .n{font-size:30px;font-weight:800;line-height:1}
+  .sc .l{font-weight:600;opacity:.95;margin-top:8px}.sc .s{opacity:.85;font-size:12.5px;margin-top:3px}
+  .sc.i{background:linear-gradient(135deg,#6366f1,#8b5cf6)}.sc.t{background:linear-gradient(135deg,#0ea5e9,#14b8a6)}
+  .sc.a{background:linear-gradient(135deg,#f59e0b,#f97316)}.sc.r{background:linear-gradient(135deg,#f43f5e,#fb7185)}
+  .grid{display:grid;grid-template-columns:1.3fr 1fr;gap:16px}
+  .card{background:var(--panel);border-radius:18px;padding:18px 20px;box-shadow:var(--shadow)}
+  .card h2{font-size:15px;font-weight:700;margin:0 0 4px}.card .csub{color:var(--muted);font-size:12.5px;margin-bottom:12px}
+  .al{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);align-items:flex-start}.al:last-child{border-bottom:0}
+  .al .ic{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;flex:0 0 auto;font-size:17px;font-weight:800}
+  .al.critical .ic{background:#ffe4e6;color:#e11d48}.al.warning .ic{background:#fef3c7;color:#d97706}.al.info .ic{background:#e0f2fe;color:#0284c7}
+  .al .t{font-weight:600;line-height:1.35}.al .c{color:var(--muted);font-size:12.5px;margin-top:2px}.al .ago{color:var(--muted);font-size:12px;white-space:nowrap}
+  .pay{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}.pay:last-child{border-bottom:0}
+  .pay .ava{width:34px;height:34px;border-radius:50%;background:#eef0ff;color:var(--indigo);display:grid;place-items:center;font-weight:700;flex:0 0 auto}
+  .pay .who{font-weight:600}.pay .car{color:var(--muted);font-size:12.5px}.pay .right{margin-left:auto;text-align:right}
+  .amt{font-weight:700}
+  .chip{display:inline-block;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:700}
+  .chip.overdue{background:#ffe4e6;color:#e11d48}.chip.due{background:#fef3c7;color:#b45309}.chip.paid{background:#dcfce7;color:#15803d}
+  .fleet{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:4px}
+  .fl{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:13px}
+  .fl .st{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .fl .st.move{background:#14b8a6}.fl .st.idle{background:#0ea5e9}.fl .st.blocked{background:#f43f5e}.fl .st.off{background:#cbd2e0}.fl .st.free{background:#a3e635}
+  .fl .p{font-weight:700}.fl .mo{color:var(--muted);font-size:12px}
+
+  /* Шторка-оверлей для мобильного сайдбара */
+  .scrim{display:none;position:fixed;inset:0;background:rgba(31,35,64,.45);z-index:30}
+
+  @media(max-width:1040px){.hero{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}}
+  @media(max-width:860px){
+    .shell{grid-template-columns:1fr}
+    .sidebar{position:fixed;left:0;top:0;width:260px;z-index:40;transform:translateX(-100%);
+      transition:transform .22s ease;box-shadow:0 20px 50px -10px rgba(31,35,64,.35)}
+    body.nav-open .sidebar{transform:none}
+    body.nav-open .scrim{display:block}
+    .burger{display:grid;place-items:center}
+  }
+  @media(max-width:560px){.hero{grid-template-columns:1fr}.fleet{grid-template-columns:1fr}.search{max-width:none}.wrap{padding:16px}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside class="sidebar" id="sidebar">
+    <div class="logo"><span class="m"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11v5H5z"/><circle cx="7.5" cy="16" r="1.3"/><circle cx="16.5" cy="16" r="1.3"/></svg></span>Автопарк</div>
+    <nav class="nav">
+      <a class="on" href="#"><span class="i">◱</span>Дашборд</a>
+      <a href="#"><span class="i">▦</span>Автопарк</a>
+      <a href="#"><span class="i">◍</span>Водители</a>
+      <a href="#"><span class="i">◎</span>Объявления</a>
+      <a href="#"><span class="i">◴</span>Задачи</a>
+      <a href="#"><span class="i">▤</span>Отчёты</a>
+      <a href="#"><span class="i">≡</span>Журналы</a>
+      <div class="sep"></div>
+      <a class="map" href="#"><span class="i">◉</span>Карта ↗</a>
+    </nav>
+    <div class="side-foot"><div class="av">Н</div><div><div class="who">Нурсултан</div><div class="role">Супер-админ</div></div></div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <button class="burger" id="burger" aria-label="Меню">☰</button>
+      <label class="search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8a90ad" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input placeholder="Поиск по номеру, водителю, штрафу…">
+      </label>
+      <span class="sp"></span>
+      <button class="iconbtn" aria-label="Уведомления">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1f2340" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9a6 6 0 1 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+        <span class="dot"></span>
+      </button>
+      <div class="av">Н</div>
+    </header>
+
+    <main class="wrap">
+      <div class="head"><h1>Привет! Вот ваш парк</h1><div class="u" id="u"></div></div>
+      <section class="hero" id="hero"></section>
+      <div class="grid">
+        <div class="card"><h2>Открытые алерты</h2><div class="csub">Требуют внимания прямо сейчас</div><div id="alerts"></div></div>
+        <div class="card"><h2>Платежи сегодня</h2><div class="csub">Сбор аренды за день</div><div id="pays"></div></div>
+        <div class="card" style="grid-column:1/-1"><h2>Парк сейчас</h2><div class="csub">Статус по каждой машине</div><div class="fleet" id="fleet"></div></div>
+      </div>
+    </main>
+  </div>
+</div>
+<div class="scrim" id="scrim"></div>
+<script src="data.js"></script>
+<script>
+  const f=window.FLEET,s=f.stats;
+  u.textContent="Обновлено "+f.updated;
+  hero.innerHTML=[
+    ["i","▦",s.cars,"Машины",`${s.occupied} заняты · ${s.free} свободны`],
+    ["t","●",s.online,"На линии",`из ${s.drivers} активных водителей`],
+    ["a","₽",s.overdue,"Просрочка оплаты",`${s.collectedToday} с собрано сегодня`],
+    ["r","⚠",s.alerts,"Открытые алерты",`${s.maintenance} машины — скоро ТО`],
+  ].map(([c,ic,n,l,sub])=>`<div class="sc ${c}"><div class="ic">${ic}</div><div class="n">${n}</div><div class="l">${l}</div><div class="s">${sub}</div></div>`).join("");
+  const ic={critical:"!",warning:"!",info:"i"};
+  alerts.innerHTML=f.alerts.map(a=>`<div class="al ${a.sev}"><div class="ic">${ic[a.sev]}</div>
+    <div style="flex:1"><div class="t">${a.text}</div><div class="c">${a.car}</div></div><div class="ago">${a.ago}</div></div>`).join("");
+  pays.innerHTML=f.payments.map(p=>{const label=p.status==='overdue'?'просрочка':p.status==='due'?'к оплате':'оплачено';
+    return `<div class="pay"><div class="ava">${p.driver[0]}</div><div><div class="who">${p.driver}</div><div class="car">${p.plate}</div></div>
+    <div class="right"><div class="amt">${p.amount} с</div><span class="chip ${p.status}">${label}</span></div></div>`}).join("");
+  const st=c=>c.status==='free'?'free':!c.online?'off':c.engine==='blocked'?'blocked':c.speed>0?'move':'idle';
+  const stx={free:'свободна',off:'нет связи',blocked:'двиг. заблокирован',move:'в движении',idle:'на связи'};
+  fleet.innerHTML=f.cars.map(c=>`<div class="fl"><span class="st ${st(c)}"></span>
+    <div><div class="p">${c.plate}</div><div class="mo">${c.model}${c.driver?' · '+c.driver:''}</div></div>
+    <div style="margin-left:auto;color:var(--muted);font-size:12px">${c.speed>0?c.speed+' км/ч':stx[st(c)]}</div></div>`).join("");
+  // Мобильная шторка сайдбара
+  const open=()=>document.body.classList.add('nav-open'), close=()=>document.body.classList.remove('nav-open');
+  burger.addEventListener('click',open); scrim.addEventListener('click',close);
+  sidebar.addEventListener('click',e=>{if(e.target.closest('a'))close();});
+</script>
+</body>
+</html>
