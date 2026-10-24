@@ -86,6 +86,12 @@ export interface Command {
 }
 
 // Соответствует FineDTO (libs/contracts/contracts/fleet.py).
+export interface CommandResult {
+  command: Command;
+  ok: boolean;
+  reason: string | null;
+}
+
 export interface Fine {
   id: number;
   amount: string | null;

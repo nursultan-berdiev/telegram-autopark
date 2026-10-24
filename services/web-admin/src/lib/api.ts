@@ -27,12 +27,16 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
+function withBody<T>(method: string, path: string, data?: unknown) {
+  return request<T>(path, {
+    method,
+    headers: data != null ? { "Content-Type": "application/json" } : {},
+    body: data != null ? JSON.stringify(data) : undefined,
+  });
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, data?: unknown) =>
-    request<T>(path, {
-      method: "POST",
-      headers: data != null ? { "Content-Type": "application/json" } : {},
-      body: data != null ? JSON.stringify(data) : undefined,
-    }),
+  post: <T>(path: string, data?: unknown) => withBody<T>("POST", path, data),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

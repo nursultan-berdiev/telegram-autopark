@@ -24,4 +24,21 @@ describe("api: слияние заголовков", () => {
     expect(headers["X-Requested-With"]).toBe("fleet-admin");
     expect(headers["Content-Type"]).toBe("application/json");
   });
+
+  it("POST без тела НЕ ставит Content-Type", async () => {
+    await api.post("/web-logout");
+    const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    expect(init.body).toBeUndefined();
+  });
+
+  it("DELETE: метод DELETE, без тела и Content-Type, 204 → undefined", async () => {
+    const r = await api.del("/fines/1");
+    const init = (fetch as unknown as { mock: { calls: [string, RequestInit][] } }).mock.calls[0][1];
+    expect(init.method).toBe("DELETE");
+    expect((init.headers as Record<string, string>)["X-Requested-With"]).toBe("fleet-admin");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    expect(init.body).toBeUndefined();
+    expect(r).toBeUndefined();
+  });
 });
