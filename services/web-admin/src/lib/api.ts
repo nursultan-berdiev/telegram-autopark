@@ -38,5 +38,6 @@ function withBody<T>(method: string, path: string, data?: unknown) {
 export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, data?: unknown) => withBody<T>("POST", path, data),
+  patch: <T>(path: string, data?: unknown) => withBody<T>("PATCH", path, data),
   del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };

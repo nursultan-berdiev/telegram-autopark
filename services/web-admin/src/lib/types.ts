@@ -173,3 +173,17 @@ export interface Announcement {
   recipients: number;
   created_at: string | null;
 }
+
+// Соответствует PeriodicTaskDTO (libs/contracts/contracts/fleet.py).
+export interface PeriodicTask {
+  id: number;
+  name: string;
+  task: string;
+  interval_seconds: number | null;
+  crontab: string | null;
+  args: Record<string, unknown> | null;
+  enabled: boolean;
+  last_run_at: string | null;
+  total_run_count: number;
+  created_at: string | null;
+}

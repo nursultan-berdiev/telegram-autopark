@@ -118,3 +118,13 @@ button.danger { color: var(--danger); border-color: var(--danger); background: v
 }
 .preview-body { white-space: pre-wrap; margin-top: 6px; }
 td.wrap { white-space: pre-wrap; max-width: 480px; }
+
+/* Своё имя, а не .form-grid: ту в онбординге (PR #36) — другой макет (flex). */
+.task-form {
+  display: grid; grid-template-columns: 140px 1fr; gap: 10px 12px; align-items: center;
+}
+.task-form > label { color: var(--muted); }
+.field-sm { width: auto; display: inline-block; }
+.period-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.radio { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
+select.field { height: 34px; }

@@ -196,6 +196,64 @@ async def test_unknown_field_in_patch_is_ignored_not_silently_applied(admin_clie
     assert resp.json()["enabled"] is False
 
 
+async def test_catalog_lists_known_tasks(admin_client):
+    resp = await admin_client.get("/periodic-tasks/catalog")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert TASK in body and body[TASK], "каталог отдаёт имя задачи и её подпись"
+
+
+async def test_create_rejects_unknown_task(admin_client):
+    """Имя вне каталога — запуск произвольной точки входа из браузера."""
+    resp = await admin_client.post(
+        "/periodic-tasks",
+        json={"name": "чужая", "task": "os.system", "interval_seconds": 3600},
+    )
+
+    assert resp.status_code == 400
+
+
+async def test_patch_rejects_unknown_task(admin_client, session):
+    row = await _make(session, name="живая")
+
+    resp = await admin_client.patch(f"/periodic-tasks/{row.id}", json={"task": "os.system"})
+
+    assert resp.status_code == 400
+
+
+async def test_run_now_enqueues(admin_client, session, monkeypatch):
+    from app.tasks import celery_app as celery_module
+
+    calls: list = []
+    monkeypatch.setattr(
+        celery_module.celery_app, "send_task", lambda name, **kw: calls.append((name, kw))
+    )
+    row = await _make(session, name="ручной")
+
+    resp = await admin_client.post(f"/periodic-tasks/{row.id}/run")
+
+    assert resp.status_code == 202
+    assert resp.json()["task"] == TASK
+    assert calls == [(TASK, {"kwargs": {"periodic_task_id": row.id}, "retry": False})]
+
+
+async def test_run_now_missing_is_404(admin_client):
+    assert (await admin_client.post("/periodic-tasks/9999/run")).status_code == 404
+
+
+async def test_run_now_broker_down_is_503(admin_client, session, monkeypatch):
+    from app.tasks import celery_app as celery_module
+
+    def boom(*a, **k):
+        raise OSError("брокер недоступен")
+
+    monkeypatch.setattr(celery_module.celery_app, "send_task", boom)
+    row = await _make(session, name="без очереди")
+
+    assert (await admin_client.post(f"/periodic-tasks/{row.id}/run")).status_code == 503
+
+
 # --- планировщик: расписание переживает пересборку ---------------------------
 
 

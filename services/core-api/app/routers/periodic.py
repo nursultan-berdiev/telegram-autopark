@@ -1,9 +1,10 @@
 """Роутер расписаний фоновых задач: их правит админка, а не деплой."""
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin_actor
@@ -11,6 +12,7 @@ from app.db.models import PeriodicTask, TaskRun
 from app.db.session import get_session
 from app.domain import periodic as periodic_service
 from app.errors import NotFound
+from app.tasks.catalog import KNOWN_TASKS
 from contracts import (
     PeriodicTaskDTO,
     PeriodicTaskPatch,
@@ -18,7 +20,16 @@ from contracts import (
     TaskRunDTO,
 )
 
+log = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/periodic-tasks/catalog")
+async def task_catalog(
+    _: int = Depends(require_admin_actor),
+) -> dict[str, str]:
+    """Имя задачи → человеческая подпись: наполняет выпадашку формы в SPA."""
+    return KNOWN_TASKS
 
 
 def _utc(dt: datetime | None) -> datetime | None:
@@ -71,6 +82,13 @@ async def create_periodic_task(
     session: AsyncSession = Depends(get_session),
     _: int = Depends(require_admin_actor),
 ) -> PeriodicTaskDTO:
+    # Имя задачи — только из каталога: иначе форма в браузере поставила бы в
+    # очередь произвольную точку входа. Старая Jinja-форма проверяла это же.
+    if payload.task not in KNOWN_TASKS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"неизвестная задача: {payload.task}",
+        )
     row = await periodic_service.create_task(
         session,
         name=payload.name,
@@ -91,6 +109,11 @@ async def patch_periodic_task(
     _: int = Depends(require_admin_actor),
 ) -> PeriodicTaskDTO:
     changes = payload.model_dump(exclude_unset=True)
+    if "task" in changes and changes["task"] not in KNOWN_TASKS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"неизвестная задача: {changes['task']}",
+        )
     row = await periodic_service.update_task(session, task_id, **changes)
     if row is None:
         raise NotFound(f"расписание {task_id} не найдено")
@@ -105,6 +128,31 @@ async def delete_periodic_task(
 ) -> None:
     if not await periodic_service.delete_task(session, task_id):
         raise NotFound(f"расписание {task_id} не найдено")
+
+
+@router.post("/periodic-tasks/{task_id}/run", status_code=status.HTTP_202_ACCEPTED)
+async def run_now(
+    task_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: int = Depends(require_admin_actor),
+) -> dict[str, str]:
+    """«Запустить сейчас»: ставит задачу в очередь немедленно, не трогая
+    расписание. Прогон появится в журнале, как у планового запуска."""
+    row = await periodic_service.get_task(session, task_id)
+    if row is None:
+        raise NotFound(f"расписание {task_id} не найдено")
+    from app.tasks.celery_app import celery_app
+
+    try:
+        # retry=False: недоступный брокер отвечает сразу, а не копит попытки.
+        celery_app.send_task(row.task, kwargs={"periodic_task_id": row.id}, retry=False)
+    except Exception as exc:  # noqa: BLE001 — брокер лёг, это и есть ответ клиенту
+        log.warning("задача %s не поставлена в очередь", row.task, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"очередь недоступна: {type(exc).__name__}",
+        ) from exc
+    return {"task": row.task}
 
 
 @router.get("/task-runs/{run_id}", response_model=TaskRunDTO)
