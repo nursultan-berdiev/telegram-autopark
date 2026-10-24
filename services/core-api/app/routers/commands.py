@@ -22,6 +22,7 @@ def _to_dto(command: Command) -> CommandDTO:
         type=command.type.value,
         status=command.status.value,
         requested_by=command.requested_by,
+        source=command.source,
         alert_id=command.alert_id,
         safety_snapshot=command.safety_snapshot,
         result=command.result,

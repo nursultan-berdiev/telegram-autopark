@@ -53,6 +53,7 @@ def run_dto(row: TaskRun) -> TaskRunDTO:
         finished_at=_utc(row.finished_at),
         detail=row.detail,
         payload=row.payload,
+        requested_by=row.requested_by,
     )
 
 

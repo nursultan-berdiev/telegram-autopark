@@ -1,13 +1,22 @@
-"""Аутентификация сервис-к-сервису и роль пользователя.
+"""Аутентификация сервис-к-сервису, веб-сессия и роль пользователя.
 
-Токены разделены по областям: INGEST_TOKEN пускает только в ингест
-телеметрии, команды — только по CORE_API_TOKEN (plan/03).
+Токены разделены по областям: INGEST_TOKEN пускает только в ингест телеметрии,
+команды — только по CORE_API_TOKEN (plan/03). Админ-действия доступны ЛИБО боту
+(CORE_API_TOKEN + X-TG-User-Id), ЛИБО браузеру (подписанная кука веб-админки).
 """
 from __future__ import annotations
 
-from fastapi import Depends, Header, HTTPException, status
+import logging
 
+from fastapi import Cookie, Depends, Header, HTTPException, Request, status
+
+from app import audit
 from app.config import settings
+from app.web.session import admin_from_cookie
+
+log = logging.getLogger(__name__)
+
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def _bearer(authorization: str | None) -> str:
@@ -72,15 +81,72 @@ def _admin_or_403(actor: int | None) -> int:
     return int(actor)  # type: ignore[arg-type]
 
 
+def _require_csrf_header(request: Request) -> None:
+    """Куки-авторизация неявная → мутации требуют заголовок X-Requested-With.
+
+    Кросс-сайтом его не выставить без CORS-префлайта (CORS мы не включаем); в
+    паре с SameSite-кукой это дешёвая защита от CSRF. Путь бота (Bearer-токен) в
+    этой защите не нуждается. Отказ логируем — в таблицу аудита отказы не пишем.
+    """
+    if request.method not in _SAFE_METHODS and not request.headers.get("x-requested-with"):
+        log.warning(
+            "отклонён запрос без X-Requested-With (возможный CSRF): %s %s",
+            request.method,
+            request.url.path,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="нужен заголовок X-Requested-With",
+        )
+
+
+def require_csrf(request: Request) -> None:
+    """Зависимость: требовать X-Requested-With на куки-мутации вне
+    `require_admin_actor` (например POST /web-logout)."""
+    _require_csrf_header(request)
+
+
 async def require_admin_actor(
-    _: str = Depends(require_core), actor: int | None = Depends(tg_user_id)
+    request: Request,
+    authorization: str | None = Header(default=None),
+    actor: int | None = Depends(tg_user_id),
+    autopark_admin: str | None = Cookie(default=None),
 ) -> int:
-    """Чувствительные действия проверяем на сервере, а не по слову клиента."""
-    return _admin_or_403(actor)
+    """Админ-действие: пускаем ЛИБО по веб-сессии (подписанная кука), ЛИБО как
+    бот (CORE_API_TOKEN + X-TG-User-Id). Одни и те же роутеры служат и боту, и
+    веб-админке; права проверяются на сервере в обоих случаях."""
+    web_tg = admin_from_cookie(autopark_admin)
+    if web_tg is not None:
+        _require_csrf_header(request)
+        audit.mark(request.scope, web_tg, audit.SOURCE_WEB)
+        return web_tg
+    # Путь бота/сервиса — строго CORE_API_TOKEN + актёр-админ.
+    await require_core(authorization)
+    admin = _admin_or_403(actor)
+    audit.mark(request.scope, admin, audit.SOURCE_BOT)
+    return admin
+
+
+async def require_admin_bot(
+    request: Request,
+    _: str = Depends(require_core),
+    actor: int | None = Depends(tg_user_id),
+) -> int:
+    """Только путь бота (CORE_API_TOKEN + X-TG-User-Id). Для действий, которые
+    веб-сессия выполнять НЕ должна — напр. выпуск себе же новой ссылки/куки через
+    /admin/login-link: иначе украденная 24-часовая кука стала бы вечной, а
+    отозвать её нельзя (сессия stateless)."""
+    admin = _admin_or_403(actor)
+    audit.mark(request.scope, admin, audit.SOURCE_BOT)
+    return admin
 
 
 async def require_import_actor(
-    _: str = Depends(require_fines_import), actor: int | None = Depends(tg_user_id)
+    request: Request,
+    _: str = Depends(require_fines_import),
+    actor: int | None = Depends(tg_user_id),
 ) -> int:
     """Узкий токен всё равно не отменяет вопроса «от чьего имени заведён штраф»."""
-    return _admin_or_403(actor)
+    admin = _admin_or_403(actor)
+    audit.mark(request.scope, admin, audit.SOURCE_BOT)
+    return admin

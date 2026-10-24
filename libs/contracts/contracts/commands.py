@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from .common import DTO
 
@@ -22,6 +23,8 @@ class CommandDTO(DTO):
     type: str
     status: str
     requested_by: int | None = None
+    # Кто инициировал команду (ручная или авто-правило).
+    source: Literal["manual", "overdue", "fines", "photo"] | None = None
     alert_id: int | None = None
     safety_snapshot: dict | None = None
     result: str | None = None

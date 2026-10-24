@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import require_admin_actor
+from app.auth import require_admin_bot
 from app.config import settings
 from app.db.session import get_session
 from app.domain import admin_auth
@@ -56,7 +56,7 @@ def _utc(value: datetime | None) -> datetime | None:
 @router.post("/admin/login-link")
 async def create_login_link(
     session: AsyncSession = Depends(get_session),
-    actor: int = Depends(require_admin_actor),
+    actor: int = Depends(require_admin_bot),
 ) -> dict:
     """Бот просит ссылку для входа — сам он уже знает, что это админ."""
     if not settings.admin_web_enabled:

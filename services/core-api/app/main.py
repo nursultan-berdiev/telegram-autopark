@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
+from app.audit import AuditMiddleware
 from app.config import settings
 from app.errors import DomainError
 from app.web.deps import NotLoggedIn
@@ -17,6 +18,7 @@ from app.routers import (
     alerts,
     announcements,
     assistant,
+    audit,
     cars,
     commands,
     documents,
@@ -25,6 +27,7 @@ from app.routers import (
     maintenance,
     invitations,
     me,
+    outbound,
     outbox,
     payments,
     photo_inspections,
@@ -36,6 +39,7 @@ from app.routers import (
     schedules,
     telemetry,
     trackers,
+    web_session,
 )
 
 logger = logging.getLogger("core-api")
@@ -78,6 +82,9 @@ async def _domain_error_handler(_: Request, exc: DomainError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
 
 
+app.add_middleware(AuditMiddleware)
+
+
 @app.get("/health")
 async def health() -> dict:
     return {"ok": True, "service": "core-api"}
@@ -101,9 +108,12 @@ app.include_router(fines.router, tags=["fines"])
 app.include_router(maintenance.router, tags=["maintenance"])
 app.include_router(periodic.router, tags=["periodic"])
 app.include_router(outbox.router, tags=["outbox"])
+app.include_router(outbound.router, tags=["outbound"])
 app.include_router(announcements.router, tags=["announcements"])
 app.include_router(documents.router, tags=["documents"])
 app.include_router(photo_inspections.router, tags=["photo-inspections"])
+app.include_router(audit.router, tags=["audit"])
+app.include_router(web_session.router, tags=["web-session"])
 app.include_router(admin.router, tags=["admin"])
 
 # MCP-сервер ИИ-ассистента (read-only). Монтируем только при включённой фиче и
