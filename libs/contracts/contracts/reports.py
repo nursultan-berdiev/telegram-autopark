@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from .common import DTO
 
@@ -92,8 +93,18 @@ class OutboundMessageDTO(DTO):
     text: str
 
 
+class AssistantTurn(DTO):
+    """Одна реплика текущего разговора с ассистентом (владелец или ассистент)."""
+
+    role: Literal["user", "assistant"]
+    text: str
+
+
 class AssistantQuery(DTO):
     question: str
+    # История текущего разговора (старые реплики → новые), без самого question.
+    # Пустая — начало разговора. Разговор живёт только в рамках сессии «Спросить ИИ».
+    history: list[AssistantTurn] = []
 
 
 class AssistantAnswer(DTO):

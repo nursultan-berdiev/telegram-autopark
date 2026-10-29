@@ -132,9 +132,10 @@ async def test_assistant_query_answers_from_snapshot(admin_client, session, monk
 
     captured = {}
 
-    async def fake_answer(question: str, context_text: str) -> str:
+    async def fake_answer(question, context_text, history=None):
         captured["question"] = question
         captured["context_text"] = context_text
+        captured["history"] = history
         return "В парке 2 машины, 1 занята."
 
     from app.clients import ai_gateway
@@ -142,12 +143,22 @@ async def test_assistant_query_answers_from_snapshot(admin_client, session, monk
     monkeypatch.setattr(ai_gateway, "answer_owner_query", fake_answer)
 
     resp = await admin_client.post(
-        "/assistant/query", json={"question": "Сколько машин свободно?"}
+        "/assistant/query",
+        json={
+            "question": "А сейчас сколько?",
+            "history": [
+                {"role": "user", "text": "Сколько всего машин?"},
+                {"role": "assistant", "text": "Две."},
+            ],
+        },
     )
     assert resp.status_code == 200
     assert resp.json() == {"answer": "В парке 2 машины, 1 занята."}
-    assert captured["question"] == "Сколько машин свободно?"
+    assert captured["question"] == "А сейчас сколько?"
     assert driver.full_name in captured["context_text"]  # снимок реально передан
+    # История разговора доходит до ai_gateway без потерь.
+    assert [t.role for t in captured["history"]] == ["user", "assistant"]
+    assert captured["history"][0].text == "Сколько всего машин?"
 
 
 async def test_assistant_requires_auth(client):

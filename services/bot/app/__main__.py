@@ -13,6 +13,7 @@ from app.config import settings
 from app.handlers import get_main_router
 from app.logger import setup_logging
 from app.media import start_media_server
+from app.middlewares.exit_ai import ExitAiConversationMiddleware
 from app.middlewares.role import RoleMiddleware
 from app.scheduler import setup_scheduler
 
@@ -31,6 +32,10 @@ def create_dispatcher(api: ApiClient | None = None) -> Dispatcher:
     role_mw = RoleMiddleware(api)
     dp.message.outer_middleware(role_mw)
     dp.callback_query.outer_middleware(role_mw)
+
+    # Гасит разговор с ИИ при нажатии кнопки меню — ДО роутеров. Outer, как и роли:
+    # к этому моменту data["state"] уже проставлен FSM-middleware диспетчера.
+    dp.message.outer_middleware(ExitAiConversationMiddleware())
 
     dp.include_router(get_main_router())
     return dp

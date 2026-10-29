@@ -22,8 +22,10 @@ import os
 import re
 import shutil
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -101,18 +103,55 @@ _OWNER_SYSTEM = (
 
 
 def _owner_tools_system() -> str:
-    """Системный промпт для режима инструментов: роль, набор tools, правила, дата."""
+    """Системный промпт режима инструментов: общий принцип поведения агента.
+
+    Без частных правил (никаких «если 138 — смотри парк»): модель сама понимает
+    намерение и подбирает инструменты. Подробности каждого инструмента — в его
+    описании на MCP-сервере, здесь их не дублируем.
+    """
     now = datetime.now(ZoneInfo(settings.timezone))
     return (
-        "Ты — ассистент владельца автопарка. Отвечай кратко, по делу, на русском. "
+        "Ты — ассистент владельца автопарка; к тебе обращается только владелец. "
         f"Сейчас {now:%Y-%m-%d %H:%M} ({settings.timezone}). "
-        "У тебя есть инструменты MCP-сервера fleet — вызывай ТОЛЬКО нужные под вопрос: "
-        "fleet_overview (парк, кто за рулём, онлайн); payments_status (графики аренды, "
-        "долги, просрочка); recent_payments (кто оплатил за N часов); car_state (где "
-        "машина и её состояние — по номеру); fines (неоплаченные штрафы); open_alerts "
-        "(тревоги); blocked_cars (блокировки двигателя). Машины называются номером "
-        "(например, 01KG139API). Опирайся ТОЛЬКО на данные инструментов, не выдумывай "
-        "цифры. Если инструмент не вернул данных — честно так и скажи."
+        "Отвечай кратко, по делу, на русском.\n"
+        "У тебя есть инструменты MCP-сервера fleet для ЧТЕНИЯ данных парка — их "
+        "названия, параметры, что возвращают и ограничения описаны в самих "
+        "инструментах. Действуй так:\n"
+        "1. Сначала пойми, что на самом деле нужно человеку.\n"
+        "2. Реши, каким инструментом или их сочетанием это можно получить, и вызови.\n"
+        "3. Проверь, что полученные данные действительно отвечают на вопрос.\n"
+        "4. Если точного совпадения нет (например, назван неполный или неточный "
+        "номер машины) — поищи близкое другими инструментами (например, посмотри "
+        "список парка) и предложи владельцу подходящие варианты.\n"
+        "5. Если нужных данных не даёт ни один инструмент — честно скажи, что не "
+        "можешь это получить, и предложи обратиться к разработчику; не придумывай "
+        "обходной ответ.\n"
+        "Опирайся ТОЛЬКО на данные инструментов — не выдумывай ни номеров, ни сумм, "
+        "ни фактов. Это продолжающийся разговор: учитывай предыдущие реплики.\n"
+        "Выдавай пользователю только готовый ответ на русском — без служебных "
+        "рассуждений, без пересказа вопроса и без текста на других языках. Время "
+        "показывай единообразно, по часовому поясу парка."
+    )
+
+
+def _history_lines(history: Sequence[Any] | None) -> list[str]:
+    """Реплики разговора в виде строк «Владелец: …» / «Ассистент: …»."""
+    lines: list[str] = []
+    for turn in history or []:
+        who = "Владелец" if getattr(turn, "role", "user") == "user" else "Ассистент"
+        lines.append(f"{who}: {getattr(turn, 'text', '')}")
+    return lines
+
+
+def _compose_owner_prompt(question: str, history: Sequence[Any] | None) -> str:
+    """Вопрос владельца с учётом истории текущего разговора (для режима инструментов)."""
+    prior = _history_lines(history)
+    if not prior:
+        return question
+    return (
+        "Это продолжение текущего разговора. Предыдущие реплики:\n"
+        + "\n".join(prior)
+        + f"\n\nНовый вопрос владельца: {question}"
     )
 
 
@@ -224,14 +263,20 @@ async def recognize_receipt(image_bytes: bytes, media_type: str) -> RecognizedRe
     return await _recognize_receipt_api(image_bytes, media_type)
 
 
-async def answer_owner_query(question: str, context_text: str) -> str:
-    """Отвечает на свободный вопрос владельца по снимку данных (FR-AI-6)."""
+async def answer_owner_query(
+    question: str, context_text: str, history: Sequence[Any] | None = None
+) -> str:
+    """Отвечает на вопрос владельца (FR-AI-6).
+
+    `history` — реплики текущего разговора (без самого `question`); передаётся
+    модели на каждом ходу, чтобы держался контекст беседы «Спросить ИИ».
+    """
     backend = _resolve_backend()
     if backend == "http":
-        return await _answer_owner_query_http(question, context_text)
+        return await _answer_owner_query_http(question, context_text, history)
     if backend == "cli":
-        return await _answer_owner_query_cli(question, context_text)
-    return await _answer_owner_query_api(question, context_text)
+        return await _answer_owner_query_cli(question, context_text, history)
+    return await _answer_owner_query_api(question, context_text, history)
 
 
 # --------------------------------------------------------------------------
@@ -286,21 +331,30 @@ async def _recognize_receipt_api(
     return _parse_receipt(data)
 
 
-async def _answer_owner_query_api(question: str, context_text: str) -> str:
+async def _answer_owner_query_api(
+    question: str, context_text: str, history: Sequence[Any] | None = None
+) -> str:
     client = _get_client()
+    # api-бэкенд (платный ключ, без MCP-инструментов) — многоходовость нативной
+    # messages-лентой: прежние реплики как есть, снимок и вопрос — в последней.
+    messages: list[dict] = [
+        {"role": getattr(t, "role", "user"), "content": getattr(t, "text", "")}
+        for t in (history or [])
+    ]
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"Данные автопарка:\n{context_text}\n\n"
+                f"Вопрос владельца: {question}"
+            ),
+        }
+    )
     response = await client.messages.create(
         model=settings.anthropic_model,
         max_tokens=1024,
         system=_OWNER_SYSTEM,
-        messages=[
-            {
-                "role": "user",
-                "content": (
-                    f"Данные автопарка:\n{context_text}\n\n"
-                    f"Вопрос владельца: {question}"
-                ),
-            }
-        ],
+        messages=messages,
     )
     parts = [b.text for b in response.content if b.type == "text"]
     return "\n".join(parts).strip() or "Не удалось сформировать ответ."
@@ -390,23 +444,30 @@ async def _recognize_receipt_cli(
     return _parse_receipt(data)
 
 
-def _cli_owner_prompt(question: str, context_text: str) -> str:
+def _cli_owner_prompt(
+    question: str, context_text: str, history: Sequence[Any] | None = None
+) -> str:
+    prior = _history_lines(history)
+    convo = ("\n\nПредыдущие реплики разговора:\n" + "\n".join(prior)) if prior else ""
     return (
         f"{_OWNER_SYSTEM}\n\n"
-        f"Данные автопарка:\n{context_text}\n\n"
+        f"Данные автопарка:\n{context_text}"
+        f"{convo}\n\n"
         f"Вопрос владельца: {question}\n\n"
         "Ответь текстом для пользователя, не используй инструменты."
     )
 
 
-async def _answer_owner_query_cli(question: str, context_text: str) -> str:
+async def _answer_owner_query_cli(
+    question: str, context_text: str, history: Sequence[Any] | None = None
+) -> str:
     args = [
         "-p",
-        _cli_owner_prompt(question, context_text),
+        _cli_owner_prompt(question, context_text, history),
         "--output-format",
         "json",
         "--model",
-        settings.claude_cli_model,
+        settings.assistant_model,
     ]
     envelope = await _run_claude_cli(args)
     return str(envelope.get("result") or "").strip() or "Не удалось сформировать ответ."
@@ -468,10 +529,12 @@ def _tools_enabled() -> bool:
     )
 
 
-def _tools_payload(question: str) -> dict:
+def _tools_payload(question: str, history: Sequence[Any] | None = None) -> dict:
     return {
-        "prompt": question,
-        "model": settings.gateway_model,
+        # История текущего разговора вшивается в сам prompt: шлюз /v1/prompt
+        # принимает одну строку, своей памяти сессий не держит.
+        "prompt": _compose_owner_prompt(question, history),
+        "model": settings.assistant_model,
         "system_prompt": _owner_tools_system(),
         "mcp_servers": {
             "mcpServers": {
@@ -486,9 +549,11 @@ def _tools_payload(question: str) -> dict:
     }
 
 
-async def _answer_via_tools(question: str) -> str | None:
+async def _answer_via_tools(
+    question: str, history: Sequence[Any] | None = None
+) -> str | None:
     """ИИ сам дёргает MCP-сервер fleet под вопрос. None — пустой ответ (на фолбэк)."""
-    body = await _gateway_post("/v1/prompt", _tools_payload(question))
+    body = await _gateway_post("/v1/prompt", _tools_payload(question, history))
     text = str(body.get("text") or "").strip()
     if not text:
         logger.warning("ассистент (инструменты): gateway вернул пустой ответ")
@@ -496,12 +561,14 @@ async def _answer_via_tools(question: str) -> str | None:
     return text
 
 
-async def _answer_owner_query_http(question: str, context_text: str) -> str:
+async def _answer_owner_query_http(
+    question: str, context_text: str, history: Sequence[Any] | None = None
+) -> str:
     # Режим инструментов: снимок в промпт не шлём. При сбое/пустом ответе —
     # фолбэк на старый снимок-промпт (флаг ASSISTANT_USE_TOOLS — постоянный откат).
     if _tools_enabled():
         try:
-            text = await _answer_via_tools(question)
+            text = await _answer_via_tools(question, history)
             if text:
                 return text
         except Exception:  # noqa: BLE001 — падать на фолбэк, а не ронять ответ
@@ -510,8 +577,8 @@ async def _answer_owner_query_http(question: str, context_text: str) -> str:
     body = await _gateway_post(
         "/v1/prompt",
         {
-            "prompt": _cli_owner_prompt(question, context_text),
-            "model": settings.gateway_model,
+            "prompt": _cli_owner_prompt(question, context_text, history),
+            "model": settings.assistant_model,
         },
     )
     return str(body.get("text") or "").strip() or "Не удалось сформировать ответ."

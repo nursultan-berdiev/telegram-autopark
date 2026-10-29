@@ -51,6 +51,8 @@ services:
       GATEWAY_URL: http://claude_gw_api:8080
       GATEWAY_API_KEY: ${GATEWAY_API_KEY:-}
       GATEWAY_MODEL: ${GATEWAY_MODEL:-sonnet}
+      # Модель разговора ассистента (отдельно от распознавания чеков) — последний Opus.
+      ASSISTANT_MODEL: ${ASSISTANT_MODEL:-opus}
       # ИИ-ассистент на инструментах: gateway (на claude_net) ходит в наш MCP.
       MCP_URL: ${MCP_URL:-http://fleet_core_api:8000/mcp/}
       MCP_TOKEN: ${MCP_TOKEN:-}

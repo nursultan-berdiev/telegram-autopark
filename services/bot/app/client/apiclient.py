@@ -250,11 +250,17 @@ class ApiClient:
     async def report_by_car(self) -> list[dict]:
         return await self._request("GET", "/reports/by-car")
 
-    async def assistant_query(self, question: str, *, tg_id: int) -> dict:
+    async def assistant_query(
+        self, question: str, *, tg_id: int, history: list[dict] | None = None
+    ) -> dict:
         # Админ-действие (сервер под require_admin_actor) — актор обязателен,
-        # иначе 403: шлём X-TG-User-Id через actor-обёртку.
+        # иначе 403: шлём X-TG-User-Id через actor-обёртку. history — реплики
+        # текущего разговора [{role, text}], чтобы модель держала контекст.
         return await self._actor_request(
-            "POST", "/assistant/query", tg_id=tg_id, json={"question": question}
+            "POST",
+            "/assistant/query",
+            tg_id=tg_id,
+            json={"question": question, "history": history or []},
         )
 
     # --- Объявления ----------------------------------------------------------
