@@ -6,6 +6,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 
 from app.client import ApiClient
@@ -47,8 +48,14 @@ async def main() -> None:
     if not settings.admin_ids:
         logger.warning("ADMIN_IDS пуст — ни один пользователь не будет администратором!")
 
+    # Прокси к Telegram только если задан (dev, где api.telegram.org недоступен
+    # напрямую). Пусто → обычная сессия, прямое соединение (прод не меняется).
+    session = AiohttpSession(proxy=settings.telegram_proxy) if settings.telegram_proxy else None
+    if session is not None:
+        logger.info("Сессия Telegram через прокси %s", settings.telegram_proxy)
     bot = Bot(
         token=settings.bot_token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
     api = ApiClient()
