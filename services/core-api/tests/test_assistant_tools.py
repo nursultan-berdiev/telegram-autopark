@@ -315,3 +315,77 @@ def test_strip_meta_preamble_does_not_empty_single_line():
     from app.clients import ai_gateway as gw
     only = "The user asks something"  # нет тела после строки — не режем в пустоту
     assert gw._strip_meta_preamble(only) == only
+
+
+# --- время в ответах инструментов — в часовом поясе парка (не сырой UTC) ------
+#
+# Пояс фиксируем на Asia/Bishkek (+6) и сверяем с ЛИТЕРАЛОМ, а не с пересчётом
+# тем же кодом: при TZ=UTC в окружении тавтологичная проверка прошла бы и со
+# сломанным пересчётом (замечание ревью). UTC 05:26 → Бишкек 11:26.
+import re as _re
+
+from datetime import datetime as _dt
+
+from app.config import settings as _settings
+
+_TS_RE = _re.compile(r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$")  # «ГГГГ-ММ-ДД ЧЧ:ММ», не ISO
+
+
+def test_local_helper_none_naive_aware(monkeypatch):
+    from app.assistant import tools as t
+    monkeypatch.setattr(_settings, "timezone", "Asia/Bishkek")
+    assert t._local(None) is None
+    # naive трактуется как UTC
+    assert t._local(_dt(2026, 10, 27, 5, 26)) == "2026-10-27 11:26"
+    # aware (UTC) — тот же момент
+    assert t._local(_dt(2026, 10, 27, 5, 26, tzinfo=timezone.utc)) == "2026-10-27 11:26"
+    # aware в другом поясе приводится к поясу парка
+    from zoneinfo import ZoneInfo
+    assert t._local(_dt(2026, 10, 27, 11, 26, tzinfo=ZoneInfo("Asia/Bishkek"))) == "2026-10-27 11:26"
+
+
+async def test_block_history_times_are_park_local(session, monkeypatch):
+    monkeypatch.setattr(_settings, "timezone", "Asia/Bishkek")
+    car = await _car(session, plate="01KG138API", engine_blocked=False)
+    t = _dt(2026, 10, 27, 5, 26, tzinfo=timezone.utc)   # UTC → Бишкек 11:26
+    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.acked,
+                        source="fines", created_at=t, updated_at=t, acked_at=t))
+    await session.commit()
+    ev = (await tools.block_history(session, "138"))["events"][0]
+    assert ev["at"] == "2026-10-27 11:26"
+    assert ev["acked_at"] == "2026-10-27 11:26"
+    assert "T" not in ev["at"] and "+" not in ev["at"]      # не ISO-UTC
+
+
+async def test_fines_issued_at_is_park_local(session, monkeypatch):
+    monkeypatch.setattr(_settings, "timezone", "Asia/Bishkek")
+    car = await _car(session, plate="01KG195API")
+    t = _dt(2026, 10, 27, 5, 26, tzinfo=timezone.utc)
+    session.add(Fine(car_id=car.id, issued_at=t, status=FineStatus.unpaid, external_ref="r1",
+                     article="Ст. 187", amount=1000.0, amount_to_pay=300.0))
+    await session.commit()
+    rows = await tools.fines(session, "195")
+    assert rows[0]["issued_at"] == "2026-10-27 11:26"
+
+
+async def test_other_time_fields_are_local_format(session):
+    # next_due (payments_status), at (recent_payments), at (open_alerts) — тоже
+    # местное время формата «ГГГГ-ММ-ДД ЧЧ:ММ», а не ISO (в PR не были покрыты).
+    from app.db.models import AlertType, Driver, SchedulePeriod
+    from app.domain import alerts as alerts_domain
+    from app.domain import payments as pay
+    from app.domain import schedules as sched
+    car = await _car(session, plate="01KG195API", driver_name="Иванов")
+    drv = await session.scalar(select(Driver).where(Driver.car_id == car.id))
+    await sched.set_schedule(session, driver_id=drv.id, period=SchedulePeriod.daily,
+                             interval_days=None, amount=1800.0,
+                             next_due_date=_dt(2027, 1, 1, tzinfo=timezone.utc))
+    await pay.create_payment(session, driver_id=drv.id, car_id=car.id, amount=1800.0, paid_at=None,
+                             receipt_file_id=None, receipt_path=None, receipt_hash="h1",
+                             recognized=RecognizedReceipt(True, 1800.0, "KGS", None, None, None))
+    await alerts_domain.raise_alert(session, car_id=car.id, atype=AlertType.overdue_payment,
+                                    payload={}, text="просрочка")
+    await session.commit()
+    assert _TS_RE.match((await tools.payments_status(session))[0]["next_due"])
+    assert _TS_RE.match((await tools.recent_payments(session))["payments"][0]["at"])
+    assert _TS_RE.match((await tools.open_alerts(session))[0]["at"])

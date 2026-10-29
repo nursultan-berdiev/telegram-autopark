@@ -64,7 +64,7 @@ async def payments_status() -> str:
     """Графики аренды по всем водителям: срок следующего платежа, долг и просрочка.
 
     Параметры: нет.
-    Возвращает: список [{driver, plate, amount (размер платежа), next_due (ISO),
+    Возвращает: список [{driver, plate, amount (размер платежа), next_due (время парка),
     debt_now (текущий долг), overdue_days, is_overdue, summary}].
     Ограничения: по всему парку сразу (фильтра по машине нет); это аренда, не штрафы."""
     async with async_session_maker() as session:
@@ -77,7 +77,7 @@ async def recent_payments(hours: int = 24) -> str:
 
     Параметры: hours (int, по умолчанию 24; обрезается в диапазон 1..720 часов).
     Возвращает: {window_hours, count, truncated (true — упёрлись в лимит 200),
-    payments:[{plate, driver, amount, at (ISO)}]}.
+    payments:[{plate, driver, amount, at (время парка)}]}.
     Ограничения: только оплаты аренды в окне; штрафы и графики — в других инструментах."""
     async with async_session_maker() as session:
         return _json(await tools.recent_payments(session, hours=hours))
@@ -105,7 +105,7 @@ async def fines(plate: str | None = None) -> str:
     Параметры: plate (строка или не указан). Без plate — по всему парку. С plate —
     по машине; номер можно неполный/неточный (сопоставление терпимо к формату).
     Возвращает: список [{plate, article (статья), violation (нарушение), amount
-    (полная сумма), amount_to_pay (к оплате, может быть со скидкой), issued_at (ISO)}].
+    (полная сумма), amount_to_pay (к оплате, может быть со скидкой), issued_at (время парка)}].
     Если номер не сопоставлен — один элемент {error, candidates|available}.
     Ограничения: только НЕоплаченные; оплаченные не показывает."""
     async with async_session_maker() as session:
@@ -117,7 +117,7 @@ async def open_alerts() -> str:
     """Открытые (непогашенные) тревоги по парку: просрочка, новые штрафы, блокировки, ТО.
 
     Параметры: нет.
-    Возвращает: список [{plate, type (тип тревоги), severity, text, at (ISO)}].
+    Возвращает: список [{plate, type (тип тревоги), severity, text, at (время парка)}].
     Ограничения: только открытые тревоги; закрытые/историю не показывает."""
     async with async_session_maker() as session:
         return _json(await tools.open_alerts(session))
@@ -143,10 +143,10 @@ async def block_history(plate: str) -> str:
     Отвечает на «был ли заблокирован раньше, когда, за что и кто снял».
     Параметры: plate (строка; можно неполный/неточный номер).
     Возвращает: {plate, currently_blocked (заблокирован ли сейчас),
-    events:[{at (ISO), action (блокировка/разблокировка), reason (вручную/за
+    events:[{at (время парка), action (блокировка/разблокировка), reason (вручную/за
     аренду/за штрафы/за фотоконтроль), status (исполнено/не выполнена/взведено/…),
     detail (почему не выполнена: снята разблокировкой, отменён взвод, сбой — или
-    null), by_admin_id (кто — только для ручных, иначе null), acked_at (ISO|null)}]}.
+    null), by_admin_id (кто — только для ручных, иначе null), acked_at (время парка|null)}]}.
     Если номер не сопоставлен — {error, candidates|available}.
     Ограничения: до 20 последних событий по этой машине; только двигатель."""
     async with async_session_maker() as session:

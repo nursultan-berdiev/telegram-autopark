@@ -15,7 +15,6 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from html import escape
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -33,6 +32,7 @@ from app.db.models import (
 )
 from app.domain import alerts as alerts_domain
 from app.domain import outbox
+from app.domain.timeutil import to_park_tz
 from app.errors import Conflict, DomainError, Validation
 
 log = logging.getLogger(__name__)
@@ -50,7 +50,7 @@ _HOW = (
 
 def local_today(now: datetime) -> date:
     """Дата по часам парка: срок фотоконтроля — локальный день, а не UTC."""
-    return now.astimezone(ZoneInfo(settings.timezone)).date()
+    return to_park_tz(now).date()
 
 
 def overdue_days(next_due_on: date, today: date) -> int:

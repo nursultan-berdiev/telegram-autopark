@@ -12,6 +12,7 @@ from decimal import Decimal
 from typing import Any
 
 from app.db.models import CommandType
+from app.domain.timeutil import to_park_tz
 from app.domain import alerts as alerts_domain
 from app.domain import cars as cars_domain
 from app.domain import commands as commands_domain
@@ -62,8 +63,16 @@ def _num(value: Any) -> Any:
     return float(value) if isinstance(value, Decimal) else value
 
 
-def _iso(dt: datetime | None) -> str | None:
-    return dt.isoformat() if dt is not None else None
+def _local(dt: datetime | None) -> str | None:
+    """Абсолютное время — готовой строкой в часовом поясе парка «ГГГГ-ММ-ДД ЧЧ:ММ».
+
+    Отдаём уже местное время, чтобы ассистент его НЕ пересчитывал из UTC сам: на
+    этом он недетерминирован (один и тот же момент показывал то верно, то со
+    сдвигом). Модели в промпте сказано показывать время как есть.
+    """
+    if dt is None:
+        return None
+    return to_park_tz(dt).strftime("%Y-%m-%d %H:%M")
 
 
 def _normalize_plate(value: str) -> str:
@@ -136,7 +145,7 @@ async def payments_status(session) -> list[dict]:
             "driver": it.name,
             "plate": it.car_plate,
             "amount": _num(it.amount),
-            "next_due": _iso(it.next_due),
+            "next_due": _local(it.next_due),
             "debt_now": _num(it.debt_now),
             "overdue_days": it.overdue_days,
             "is_overdue": it.is_overdue,
@@ -154,7 +163,7 @@ async def recent_payments(session, hours: int = 24) -> dict:
         window = 24
     rows = await payments_domain.list_recent(session, hours=window, limit=RECENT_LIMIT)
     payments = [
-        {"plate": plate, "driver": name, "amount": _num(p.amount), "at": _iso(p.created_at)}
+        {"plate": plate, "driver": name, "amount": _num(p.amount), "at": _local(p.created_at)}
         for p, plate, name in rows
     ]
     return {
@@ -204,7 +213,7 @@ async def fines(session, plate: str | None = None) -> list[dict]:
             "violation": f.violation_title,
             "amount": _num(f.amount),
             "amount_to_pay": _num(f.amount_to_pay),
-            "issued_at": _iso(f.issued_at),
+            "issued_at": _local(f.issued_at),
         }
         for f, pl in rows
     ]
@@ -220,7 +229,7 @@ async def open_alerts(session) -> list[dict]:
             "type": a.type.value,
             "severity": a.severity,
             "text": (a.payload or {}).get("text"),
-            "at": _iso(a.triggered_at),
+            "at": _local(a.triggered_at),
         }
         for a in alerts
     ]
@@ -267,7 +276,7 @@ async def block_history(session, plate: str) -> dict:
             continue
         events.append(
             {
-                "at": _iso(cm.created_at),
+                "at": _local(cm.created_at),
                 "action": (
                     "блокировка" if cm.type == CommandType.engine_stop else "разблокировка"
                 ),
@@ -278,7 +287,7 @@ async def block_history(session, plate: str) -> dict:
                 "detail": cm.result or None,
                 # Кто снял/поставил вручную: id админа. Для авто (аренда/штрафы) — None.
                 "by_admin_id": cm.requested_by if cm.source == "manual" else None,
-                "acked_at": _iso(cm.acked_at),
+                "acked_at": _local(cm.acked_at),
             }
         )
         if len(events) >= BLOCK_HISTORY_LIMIT:
