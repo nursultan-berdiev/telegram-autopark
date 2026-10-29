@@ -432,3 +432,62 @@ async def test_car_documents(session):
     assert d["added"] is not None
     # Неизвестный номер — ошибка.
     assert "error" in await tools.car_documents(session, "777")
+
+
+# --- ответ из одной служебной англ. строки без ответа -> фолбэк ---------------
+
+_META_ONLY = ("The user's question is just asking what they asked about earlier — "
+              "I can answer directly from the conversation history. No tools needed.")
+
+
+def _tools_on(monkeypatch):
+    monkeypatch.setattr(ai_gateway.settings, "assistant_use_tools", True)
+    monkeypatch.setattr(ai_gateway.settings, "mcp_url", "http://core/mcp/")
+    monkeypatch.setattr(ai_gateway.settings, "mcp_token", "secret")
+
+
+async def test_meta_only_tools_answer_falls_back_to_snapshot(monkeypatch):
+    _tools_on(monkeypatch)
+    calls = []
+
+    async def _post(path, payload, **kw):
+        calls.append(payload)
+        if "mcp_servers" in payload:
+            return {"text": _META_ONLY}          # реальная утечка с прода
+        return {"text": "Да, помню: вы спрашивали про блокировки и штрафы."}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("Ты помнишь что я спрашивал?", "СНИМОК")
+    assert out == "Да, помню: вы спрашивали про блокировки и штрафы."
+    assert len(calls) == 2, "служебный ответ инструментов не показываем — идём в фолбэк"
+
+
+async def test_russian_tools_answer_no_fallback(monkeypatch):
+    _tools_on(monkeypatch)
+    calls = []
+
+    async def _post(path, payload, **kw):
+        calls.append(payload)
+        return {"text": "Сейчас ни одна машина не заблокирована."}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("кто заблокирован?", "СНИМОК")
+    assert out == "Сейчас ни одна машина не заблокирована." and len(calls) == 1
+
+
+async def test_both_meta_only_gives_safe_message(monkeypatch):
+    _tools_on(monkeypatch)
+
+    async def _post(path, payload, **kw):
+        return {"text": _META_ONLY}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("?", "СНИМОК")
+    assert out == ai_gateway._NO_ANSWER and "The user" not in out
+
+
+def test_is_answer():
+    assert ai_gateway._is_answer("Да, помню.")
+    assert ai_gateway._is_answer("01KG138API — 4 штрафа")
+    assert not ai_gateway._is_answer("")
+    assert not ai_gateway._is_answer(_META_ONLY)

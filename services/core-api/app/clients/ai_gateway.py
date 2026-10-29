@@ -282,6 +282,20 @@ async def answer_owner_query(
     return _strip_meta_preamble(text)
 
 
+_CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+_NO_ANSWER = "Не удалось сформировать ответ — переформулируйте, пожалуйста, вопрос."
+
+
+def _is_answer(text: str) -> bool:
+    """Годный ответ владельцу: непустой и по-русски (есть кириллица).
+
+    Opus изредка вместо ответа отдаёт только служебную строку на английском —
+    срез мета-строки тут бессилен (тела после неё нет), поэтому проверяем сам
+    ответ и при неудаче идём в фолбэк, а не показываем мусор.
+    """
+    return bool(text and _CYRILLIC.search(text))
+
+
 def _strip_meta_preamble(text: str) -> str:
     """Срезает ведущую служебную строку-пересказ вопроса, которую Opus изредка
     выдаёт перед ответом («The user asks…», «The вопрос владельца:…»).
@@ -574,8 +588,10 @@ async def _answer_via_tools(
     """ИИ сам дёргает MCP-сервер fleet под вопрос. None — пустой ответ (на фолбэк)."""
     body = await _gateway_post("/v1/prompt", _tools_payload(question, history))
     text = str(body.get("text") or "").strip()
-    if not text:
-        logger.warning("ассистент (инструменты): gateway вернул пустой ответ")
+    if not _is_answer(_strip_meta_preamble(text)):
+        # Пусто или одна служебная строка без ответа («The user's question… No
+        # tools needed.»): владельцу такое не показываем — уходим в фолбэк.
+        logger.warning("ассистент (инструменты): пустой или служебный ответ — фолбэк")
         return None
     return text
 
@@ -600,4 +616,5 @@ async def _answer_owner_query_http(
             "model": settings.assistant_model,
         },
     )
-    return str(body.get("text") or "").strip() or "Не удалось сформировать ответ."
+    text = str(body.get("text") or "").strip()
+    return text if _is_answer(_strip_meta_preamble(text)) else _NO_ANSWER
