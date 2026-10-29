@@ -30,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.models import PaymentSchedule, SchedulePeriod
+from app.domain.timeutil import aware_utc
 
 _CENT = Decimal("0.01")
 # Защита от зацикливания при подсчёте наступивших периодов (advance всегда
@@ -50,7 +51,7 @@ def _money(value: Money) -> Decimal:
 
 def _aware(dt: datetime) -> datetime:
     """Гарантирует tz-aware datetime (в БД/SQLite дата может быть naive)."""
-    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return aware_utc(dt)
 
 
 def _is_day_off(dt: datetime) -> bool:

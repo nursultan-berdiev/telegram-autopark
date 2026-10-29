@@ -10,10 +10,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
-from zoneinfo import ZoneInfo
 
-from app.config import settings
 from app.db.models import CommandType
+from app.domain.timeutil import to_park_tz
 from app.domain import alerts as alerts_domain
 from app.domain import cars as cars_domain
 from app.domain import commands as commands_domain
@@ -73,11 +72,7 @@ def _local(dt: datetime | None) -> str | None:
     """
     if dt is None:
         return None
-    # Наивное время считаем UTC (в БД хранится UTC; SQLite возвращает без tz).
-    # Иначе astimezone принял бы его за системное локальное и сдвинул неверно.
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(ZoneInfo(settings.timezone)).strftime("%Y-%m-%d %H:%M")
+    return to_park_tz(dt).strftime("%Y-%m-%d %H:%M")
 
 
 def _normalize_plate(value: str) -> str:
