@@ -222,24 +222,41 @@ async def test_fines_by_partial_plate(session):
 async def test_block_history(session):
     car = await _car(session, plate="01KG138API", engine_blocked=False)
     # Хронология (id по возрастанию): блок за штрафы (исполнен), снят вручную
-    # админом 123, затем блок за аренду не удался.
+    # админом 123, затем блок за аренду «не выполнен» (снят разблокировкой).
     session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.acked, source="fines", created_at=NOW, updated_at=NOW, acked_at=NOW))
     await session.flush()
     session.add(Command(car_id=car.id, type=CommandType.engine_resume, status=CommandStatus.acked, source="manual", requested_by=123, created_at=NOW, updated_at=NOW, acked_at=NOW))
     await session.flush()
-    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.failed, source="overdue", created_at=NOW, updated_at=NOW))
+    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.failed, source="overdue", result="снята разблокировкой двигателя", created_at=NOW, updated_at=NOW))
     await session.commit()
 
     hist = await tools.block_history(session, "138")  # и номер неполный
     assert hist["plate"] == "01KG138API" and hist["currently_blocked"] is False
     ev = hist["events"]
     assert len(ev) == 3
-    # Новые сверху.
-    assert ev[0]["action"] == "блокировка" and ev[0]["reason"] == "за аренду" and ev[0]["status"] == "не удалось"
+    # Новые сверху. `failed` → нейтральное «не выполнена», причина — в detail.
+    assert ev[0]["action"] == "блокировка" and ev[0]["reason"] == "за аренду"
+    assert ev[0]["status"] == "не выполнена" and ev[0]["detail"] == "снята разблокировкой двигателя"
     assert ev[1]["action"] == "разблокировка" and ev[1]["reason"] == "вручную" and ev[1]["by_admin_id"] == 123
     assert ev[2]["action"] == "блокировка" and ev[2]["reason"] == "за штрафы" and ev[2]["status"] == "исполнено"
     # Авто-команды без «кто».
     assert ev[0]["by_admin_id"] is None and ev[2]["by_admin_id"] is None
+
+
+async def test_block_history_photo_source_labeled(session):
+    car = await _car(session, plate="01KG195API", engine_blocked=False)
+    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.acked, source="photo", created_at=NOW, updated_at=NOW, acked_at=NOW))
+    await session.commit()
+    hist = await tools.block_history(session, "01KG195API")
+    assert hist["events"][0]["reason"] == "за фотоконтроль"  # source=photo не «сырым»
+
+
+async def test_resolve_plate_ignores_empty_normalized(session):
+    # Номер из одних спецсимволов (норм. → "") не должен совпадать со всем подряд.
+    await _car(session, plate="01KG138API")
+    await _car(session, plate="—")
+    st = await tools.car_state(session, "138")
+    assert st.get("plate") == "01KG138API"  # нашёл 138, не запутался в пустом номере
 
 
 async def test_tools_payload_carries_history_and_opus_model(monkeypatch):

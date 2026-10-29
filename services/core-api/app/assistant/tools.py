@@ -34,17 +34,26 @@ _BLOCK_STATE = {
     "unconfirmed": "заглушён (не подтверждено телеметрией)",
 }
 
-# Источник команды → почему: ручной админ / авто за аренду / авто за штрафы.
-_SOURCE_LABEL = {"manual": "вручную", "overdue": "за аренду", "fines": "за штрафы"}
+# Источник команды → почему (значения CommandSource). photo — задел под блок за
+# пропуск фотоконтроля; держим в таблице, чтобы история не падала на сырой код.
+_SOURCE_LABEL = {
+    "manual": "вручную",
+    "overdue": "за аренду",
+    "fines": "за штрафы",
+    "photo": "за фотоконтроль",
+}
 
-# Статус команды двигателя — человекочитаемо (для истории блокировок).
+# Статус команды двигателя — человекочитаемо (для истории блокировок). `failed`
+# ставится не только при сбое отправки, но и когда блок снят разблокировкой или
+# админ отменил взвод — поэтому нейтральное «не выполнена», а подробности даёт
+# поле result (см. block_history).
 _CMD_STATUS_LABEL = {
     "queued": "в полёте",
     "sent": "в полёте",
     "armed": "взведено (сработает на остановке)",
     "acked": "исполнено",
     "unconfirmed": "исполнено (не подтверждено телеметрией)",
-    "failed": "не удалось",
+    "failed": "не выполнена",
     "blocked_by_safety": "отклонено защитой (машина не стояла)",
 }
 
@@ -84,7 +93,9 @@ async def _resolve_plate(session, plate: str) -> dict:
     exact = [cid for cid, n in norm.items() if n == q]
     if len(exact) == 1:
         return {"car_id": exact[0], "plate": pm[exact[0]]}
-    subs = [cid for cid, n in norm.items() if q and (q in n or n in q)]
+    # `n` обязателен непустой: иначе номер из одних спецсимволов (norm == "")
+    # совпал бы с любым запросом ("" in q == True) и ломал поиск.
+    subs = [cid for cid, n in norm.items() if n and (q in n or n in q)]
     if len(subs) == 1:
         return {"car_id": subs[0], "plate": pm[subs[0]]}
     if len(subs) > 1:
@@ -262,6 +273,9 @@ async def block_history(session, plate: str) -> dict:
                 ),
                 "reason": _SOURCE_LABEL.get(cm.source, cm.source),
                 "status": _CMD_STATUS_LABEL.get(cm.status.value, cm.status.value),
+                # Подробность статуса (почему «не выполнена»: снята разблокировкой,
+                # отменён взвод, сбой отправки и т.п.) — есть не всегда.
+                "detail": cm.result or None,
                 # Кто снял/поставил вручную: id админа. Для авто (аренда/штрафы) — None.
                 "by_admin_id": cm.requested_by if cm.source == "manual" else None,
                 "acked_at": _iso(cm.acked_at),
