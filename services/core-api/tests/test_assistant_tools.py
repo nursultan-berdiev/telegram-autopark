@@ -288,3 +288,30 @@ async def test_tools_payload_carries_history_and_opus_model(monkeypatch):
 async def test_compose_owner_prompt_without_history_is_bare_question():
     assert ai_gateway._compose_owner_prompt("вопрос", None) == "вопрос"
     assert ai_gateway._compose_owner_prompt("вопрос", []) == "вопрос"
+
+
+# --- срез служебной мета-строки из ответа ассистента (детерминированно) -------
+
+
+def test_strip_meta_preamble_removes_leading_english_meta():
+    from app.clients import ai_gateway as gw
+    # Реальные утечки Opus на вопрос «помнишь что я спрашивал»:
+    a = "The вопрос владельца: помнит ли он что спрашивал ранее.\n\nДа, помню. Вы спрашивали про блок."
+    assert gw._strip_meta_preamble(a) == "Да, помню. Вы спрашивали про блок."
+    b = "The user asks what they asked earlier.\n\nДа, помню. Вы спрашивали про штрафы."
+    assert gw._strip_meta_preamble(b) == "Да, помню. Вы спрашивали про штрафы."
+
+
+def test_strip_meta_preamble_keeps_normal_answers():
+    from app.clients import ai_gateway as gw
+    ok = "Да, помню. Вы спрашивали про блок двигателя и штрафы."
+    assert gw._strip_meta_preamble(ok) == ok
+    # «the» в середине и латиница в номере не триггерят срез.
+    multi = "Состояние 01KGTEST01:\n- трекер офлайн\n- двигатель не заблокирован"
+    assert gw._strip_meta_preamble(multi) == multi
+
+
+def test_strip_meta_preamble_does_not_empty_single_line():
+    from app.clients import ai_gateway as gw
+    only = "The user asks something"  # нет тела после строки — не режем в пустоту
+    assert gw._strip_meta_preamble(only) == only

@@ -273,10 +273,28 @@ async def answer_owner_query(
     """
     backend = _resolve_backend()
     if backend == "http":
-        return await _answer_owner_query_http(question, context_text, history)
-    if backend == "cli":
-        return await _answer_owner_query_cli(question, context_text, history)
-    return await _answer_owner_query_api(question, context_text, history)
+        text = await _answer_owner_query_http(question, context_text, history)
+    elif backend == "cli":
+        text = await _answer_owner_query_cli(question, context_text, history)
+    else:
+        text = await _answer_owner_query_api(question, context_text, history)
+    return _strip_meta_preamble(text)
+
+
+def _strip_meta_preamble(text: str) -> str:
+    """Срезает ведущую служебную строку-пересказ вопроса, которую Opus изредка
+    выдаёт перед ответом («The user asks…», «The вопрос владельца:…»).
+
+    Детерминированная подстраховка к промпту (он просит так не делать, но модель
+    недетерминирована). Режем ТОЛЬКО первую строку и ТОЛЬКО если она начинается с
+    английского «The » — нормальный ответ на русском так не начинается, полезный
+    текст не теряется. Если после строки ничего не осталось — не трогаем.
+    """
+    body = text.lstrip()
+    first, _, rest = body.partition("\n")
+    if rest.strip() and re.match(r"(?i)^the\b", first):
+        return rest.strip()
+    return text
 
 
 # --------------------------------------------------------------------------
