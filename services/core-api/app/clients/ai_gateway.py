@@ -101,6 +101,12 @@ _OWNER_SYSTEM = (
     "недостаточно, честно скажи об этом. Не выдумывай цифры."
 )
 
+# Проверка ответа владельцу (см. _is_answer).
+_CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+_META_LEAD = re.compile(r"(?i)^the\b")
+_LATIN_WORD = re.compile(r"\b[A-Za-z]{2,}\b")
+_NO_ANSWER = "Не удалось сформировать ответ — переформулируйте, пожалуйста, вопрос."
+
 
 def _owner_tools_system() -> str:
     """Системный промпт режима инструментов: общий принцип поведения агента.
@@ -279,21 +285,30 @@ async def answer_owner_query(
         text = await _answer_owner_query_cli(question, context_text, history)
     else:
         text = await _answer_owner_query_api(question, context_text, history)
-    return _strip_meta_preamble(text)
-
-
-_CYRILLIC = re.compile(r"[А-Яа-яЁё]")
-_NO_ANSWER = "Не удалось сформировать ответ — переформулируйте, пожалуйста, вопрос."
+    # Одна проверка для всех бэкендов (http/cli/api): мусор вместо ответа не отдаём.
+    text = _strip_meta_preamble(text)
+    return text if _is_answer(text) else _NO_ANSWER
 
 
 def _is_answer(text: str) -> bool:
-    """Годный ответ владельцу: непустой и по-русски (есть кириллица).
+    """Годится ли текст (уже после `_strip_meta_preamble`) как ответ владельцу.
 
-    Opus изредка вместо ответа отдаёт только служебную строку на английском —
-    срез мета-строки тут бессилен (тела после неё нет), поэтому проверяем сам
-    ответ и при неудаче идём в фолбэк, а не показываем мусор.
+    Кириллицу НЕ требуем: валидный ответ бывает и из одного номера или числа
+    («138AAA02», «12 500»). Отбрасываем то, что модель изредка выдаёт ВМЕСТО ответа:
+      * пусто;
+      * осталась служебная строка с ведущим англ. «The …» — тела под ней не было
+        (иначе её убрал бы срез), даже если внутри есть кириллица
+        («The вопрос владельца: …», «The user asks: кто заблокирован?»);
+      * английская фраза без кириллицы — 3+ латинских слова («I can answer…»).
+    Компромисс (принят в #50): русский ответ, начинающийся с латинского «The…»,
+    тоже не пройдёт.
     """
-    return bool(text and _CYRILLIC.search(text))
+    t = (text or "").strip()
+    if not t or _META_LEAD.match(t):
+        return False
+    if not _CYRILLIC.search(t) and len(_LATIN_WORD.findall(t)) >= 3:
+        return False
+    return True
 
 
 def _strip_meta_preamble(text: str) -> str:
@@ -390,7 +405,7 @@ async def _answer_owner_query_api(
         messages=messages,
     )
     parts = [b.text for b in response.content if b.type == "text"]
-    return "\n".join(parts).strip() or "Не удалось сформировать ответ."
+    return "\n".join(parts).strip()
 
 
 # --------------------------------------------------------------------------
@@ -503,7 +518,7 @@ async def _answer_owner_query_cli(
         settings.assistant_model,
     ]
     envelope = await _run_claude_cli(args)
-    return str(envelope.get("result") or "").strip() or "Не удалось сформировать ответ."
+    return str(envelope.get("result") or "").strip()
 
 
 # --------------------------------------------------------------------------
@@ -616,5 +631,4 @@ async def _answer_owner_query_http(
             "model": settings.assistant_model,
         },
     )
-    text = str(body.get("text") or "").strip()
-    return text if _is_answer(_strip_meta_preamble(text)) else _NO_ANSWER
+    return str(body.get("text") or "").strip()
