@@ -526,6 +526,8 @@ def test_is_answer():
     assert ok("01KG138API — 4 штрафа")
     # валидные ответы без кириллицы — не отбрасываем
     assert ok("138AAA02") and ok("12 500") and ok("Hyundai Sonata 2019")
+    # голое латинское название из 3+ слов — тоже валидный ответ (замечание ревью)
+    assert ok("Toyota Land Cruiser") and ok("Kia Rio X-Line")
     # мусор вместо ответа
     assert not ok("") and not ok("   ")
     assert not ok(_META_ONLY)

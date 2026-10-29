@@ -104,7 +104,14 @@ _OWNER_SYSTEM = (
 # Проверка ответа владельцу (см. _is_answer).
 _CYRILLIC = re.compile(r"[А-Яа-яЁё]")
 _META_LEAD = re.compile(r"(?i)^the\b")
-_LATIN_WORD = re.compile(r"\b[A-Za-z]{2,}\b")
+_LATIN_TOKEN = re.compile(r"[a-z]+")
+# Англ. служебные слова: в мета-фразе модели их много, в названиях моделей авто
+# («Toyota Land Cruiser», «Kia Rio X-Line») — ни одного.
+_EN_FUNCTION_WORDS = frozenset(
+    "the a an i you he she we they it this that these those is are was were be been am "
+    "do does did can could will would should may might must to of in on at for from "
+    "with by about into and or but not no just so if as what which who my your their its".split()
+)
 _NO_ANSWER = "Не удалось сформировать ответ — переформулируйте, пожалуйста, вопрос."
 
 
@@ -299,14 +306,18 @@ def _is_answer(text: str) -> bool:
       * осталась служебная строка с ведущим англ. «The …» — тела под ней не было
         (иначе её убрал бы срез), даже если внутри есть кириллица
         («The вопрос владельца: …», «The user asks: кто заблокирован?»);
-      * английская фраза без кириллицы — 3+ латинских слова («I can answer…»).
+      * английская фраза без кириллицы — 2+ англ. служебных слова («I can answer
+        directly from…»). Считаем именно служебные слова, а не любые латинские:
+        голое название модели («Toyota Land Cruiser») — валидный ответ.
     Компромисс (принят в #50): русский ответ, начинающийся с латинского «The…»,
     тоже не пройдёт.
     """
     t = (text or "").strip()
     if not t or _META_LEAD.match(t):
         return False
-    if not _CYRILLIC.search(t) and len(_LATIN_WORD.findall(t)) >= 3:
+    if not _CYRILLIC.search(t) and sum(
+        w in _EN_FUNCTION_WORDS for w in _LATIN_TOKEN.findall(t.lower())
+    ) >= 2:
         return False
     return True
 
