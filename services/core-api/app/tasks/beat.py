@@ -13,7 +13,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, tzinfo
 from typing import Any
 
 from celery.beat import ScheduleEntry, Scheduler
@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import PeriodicTask
 from app.db.sync_engine import sync_engine
+from app.domain.timeutil import aware_utc
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +33,16 @@ log = logging.getLogger(__name__)
 SYNC_EVERY_SECONDS = 30
 
 
-def _aware(value: datetime | None) -> datetime | None:
-    """SQLite отдаёт naive datetime, а celery сравнивает с aware."""
-    if value is not None and value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value
+def _in_schedule_tz(value: datetime | None, tz: tzinfo) -> datetime | None:
+    """Время последнего запуска в поясе расписания (naive из SQLite — UTC).
+
+    crontab celery берёт час и дату из самого last_run_at, а не из
+    app.timezone. С UTC из БД «0 9» означало 09:00 UTC = 15:00 по Бишкеку:
+    после рестарта beat утренние задачи уходили сразу, а вечерние — ночью.
+    """
+    if value is None:
+        return None
+    return aware_utc(value).astimezone(tz)
 
 
 def parse_crontab(spec: str) -> celery_crontab:
@@ -90,7 +96,7 @@ class DatabaseScheduler(Scheduler):
                     # что задачу «только что выполнили». Таблица перечитывается
                     # чаще минимального интервала, поэтому таймер обнулялся бы
                     # на каждой пересборке и задача не запустилась бы никогда.
-                    last_run_at=_aware(row.last_run_at),
+                    last_run_at=_in_schedule_tz(row.last_run_at, self.app.timezone),
                     total_run_count=row.total_run_count or 0,
                     kwargs=dict(row.args or {}, periodic_task_id=row.id),
                     app=self.app,
