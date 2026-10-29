@@ -12,9 +12,11 @@ from app.db.models import (
     Command,
     CommandStatus,
     CommandType,
+    Document,
     Driver,
     Fine,
     FineStatus,
+    PhotoInspection,
     SchedulePeriod,
     Tracker,
     TrackerProvider,
@@ -389,3 +391,44 @@ async def test_other_time_fields_are_local_format(session):
     assert _TS_RE.match((await tools.payments_status(session))[0]["next_due"])
     assert _TS_RE.match((await tools.recent_payments(session))["payments"][0]["at"])
     assert _TS_RE.match((await tools.open_alerts(session))[0]["at"])
+
+
+# --- новые инструменты: фотоконтроль и документы машины -----------------------
+
+
+async def test_car_photo_inspections(session):
+    car = await _car(session, plate="01KG138API", driver_name="Асанов Азамат")
+    drv = await session.scalar(select(Driver).where(Driver.car_id == car.id))
+    session.add(PhotoInspection(
+        driver_id=drv.id, car_id=car.id,
+        front_file_id="F", rear_file_id="R", left_file_id="L", right_file_id=None,
+        interior_front_file_id="IF", interior_rear_file_id="IR",
+        has_issues=True, comment="царапина на двери", created_at=NOW,
+    ))
+    await session.commit()
+    res = await tools.car_photo_inspections(session, "138")   # неполный номер
+    assert res["plate"] == "01KG138API" and res["count"] == 1
+    insp = res["inspections"][0]
+    assert insp["driver"] == "Асанов Азамат"
+    assert insp["has_issues"] is True and insp["comment"] == "царапина на двери"
+    # Сданный ракурс → ссылка на медиа-прокси; не сданный (right=None) → null.
+    assert insp["photos"]["front"] == f"/api/media/inspection/{insp['id']}?angle=front"
+    assert insp["photos"]["right"] is None
+    # Неизвестный номер — ошибка со списком доступных.
+    miss = await tools.car_photo_inspections(session, "777")
+    assert "error" in miss and "available" in miss
+
+
+async def test_car_documents(session):
+    car = await _car(session, plate="01KG195API")
+    session.add(Document(car_id=car.id, title="ОСАГО", file_id="BQAC",
+                         file_kind="document", file_name="osago.pdf", created_by=1, created_at=NOW))
+    await session.commit()
+    res = await tools.car_documents(session, "195")
+    assert res["plate"] == "01KG195API" and res["count"] == 1 and "note" in res
+    d = res["documents"][0]
+    assert d["title"] == "ОСАГО" and d["file_kind"] == "document"
+    assert d["url"] == f"/api/media/document/{d['id']}"
+    assert d["added"] is not None
+    # Неизвестный номер — ошибка.
+    assert "error" in await tools.car_documents(session, "777")

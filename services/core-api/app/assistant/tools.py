@@ -16,8 +16,10 @@ from app.domain.timeutil import to_park_tz
 from app.domain import alerts as alerts_domain
 from app.domain import cars as cars_domain
 from app.domain import commands as commands_domain
+from app.domain import documents as documents_domain
 from app.domain import fines as fines_domain
 from app.domain import payments as payments_domain
+from app.domain import photo_inspections as photo_domain
 from app.domain import reports as reports_domain
 from app.domain import telemetry as telemetry_domain
 
@@ -25,6 +27,17 @@ from app.domain import telemetry as telemetry_domain
 RECENT_HOURS_MAX = 720  # 30 суток
 RECENT_LIMIT = 200
 BLOCK_HISTORY_LIMIT = 20
+INSPECTIONS_LIMIT = 10
+
+# Ракурс фотоконтроля → поле file_id осмотра (left/right могли не сдавать до 0027).
+_INSPECTION_ANGLES = {
+    "front": "front_file_id",
+    "left": "left_file_id",
+    "rear": "rear_file_id",
+    "right": "right_file_id",
+    "interior_front": "interior_front_file_id",
+    "interior_rear": "interior_rear_file_id",
+}
 
 # Человекочитаемое состояние блока по статусу команды.
 _BLOCK_STATE = {
@@ -296,3 +309,62 @@ async def block_history(session, plate: str) -> dict:
     st = await telemetry_domain.get_state(session, car_id)
     currently_blocked = bool(st.engine_blocked) if st is not None else None
     return {"plate": plate, "currently_blocked": currently_blocked, "events": events}
+
+
+async def car_photo_inspections(session, plate: str) -> dict:
+    """Сданные фотоконтроли машины: когда, кто сдавал, были ли замечания, и фото
+    по ракурсам (ссылки на медиа-прокси, как в веб-альбоме). Только чтение."""
+    res = await _resolve_plate(session, plate)
+    if "car_id" not in res:
+        return res
+    car_id, plate = res["car_id"], res["plate"]
+
+    items: list[dict] = []
+    for view in await photo_domain.list_inspections_by_car(session, car_id, limit=INSPECTIONS_LIMIT):
+        insp = view.inspection
+        # Ракурс → ссылка на медиа-прокси, либо None, если фото этого ракурса нет.
+        photos = {
+            angle: (f"/api/media/inspection/{insp.id}?angle={angle}"
+                    if getattr(insp, attr) else None)
+            for angle, attr in _INSPECTION_ANGLES.items()
+        }
+        items.append(
+            {
+                "id": insp.id,
+                "at": _local(insp.created_at),
+                "driver": view.driver_name,
+                "has_issues": insp.has_issues,   # True — водитель отметил замечания
+                "comment": insp.comment,
+                "photos": photos,
+            }
+        )
+    return {"plate": plate, "count": len(items), "inspections": items}
+
+
+async def car_documents(session, plate: str) -> dict:
+    """Документы, привязанные к машине: название, тип файла, дата загрузки и ссылка
+    на файл (медиа-прокси). Срок действия/номер в системе не хранятся. Только чтение."""
+    res = await _resolve_plate(session, plate)
+    if "car_id" not in res:
+        return res
+    car_id, plate = res["car_id"], res["plate"]
+
+    docs = await documents_domain.list_documents(session, car_id=car_id)
+    return {
+        "plate": plate,
+        "count": len(docs),
+        # Честно для модели: структурированных срока/номера в БД нет — не выдумывать.
+        "note": "Срок действия и номер документа в системе не хранятся; есть только "
+                "название, файл и дата загрузки.",
+        "documents": [
+            {
+                "id": d.id,
+                "title": d.title,
+                "file_name": d.file_name,
+                "file_kind": d.file_kind,   # "photo" | "document"
+                "added": _local(d.created_at),
+                "url": f"/api/media/document/{d.id}",
+            }
+            for d in docs
+        ],
+    }

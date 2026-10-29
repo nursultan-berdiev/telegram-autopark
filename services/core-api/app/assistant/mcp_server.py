@@ -153,5 +153,38 @@ async def block_history(plate: str) -> str:
         return _json(await tools.block_history(session, plate))
 
 
+@mcp.tool(structured_output=False)
+async def car_photo_inspections(plate: str) -> str:
+    """Фотоконтроли (осмотры) машины: когда сдавали, кто и с какими замечаниями, плюс фото.
+
+    Бери, когда спрашивают про фотоконтроль/осмотр/фото состояния конкретной машины.
+    Параметры: plate (строка; можно неполный/неточный номер).
+    Возвращает: {plate, count, inspections:[{id, at (время парка), driver (кто сдавал),
+    has_issues (true — водитель отметил замечания), comment, photos:{<ракурс>: ссылка
+    на медиа-прокси | null}}]}. Ракурсы: front, left, rear, right, interior_front,
+    interior_rear; null — фото этого ракурса не сдано. Свежие осмотры первыми (до 10).
+    Если номер не сопоставлен — {error, candidates|available}.
+    Ограничения: только чтение; сами изображения открываются по ссылкам (как в веб-альбоме)."""
+    async with async_session_maker() as session:
+        return _json(await tools.car_photo_inspections(session, plate))
+
+
+@mcp.tool(structured_output=False)
+async def car_documents(plate: str) -> str:
+    """Документы, привязанные к машине (ОСАГО, техпаспорт и т.п.): названия и файлы.
+
+    Бери, когда спрашивают про документы конкретной машины.
+    Параметры: plate (строка; можно неполный/неточный номер).
+    Возвращает: {plate, count, note, documents:[{id, title (название/тип), file_name,
+    file_kind (photo|document), added (время парка), url (ссылка на файл через
+    медиа-прокси)}]}. Свежие первыми.
+    ВАЖНО: срок действия и номер документа в системе НЕ хранятся (есть только название,
+    файл и дата загрузки) — не выдумывай их; об этом же сказано в поле note.
+    Если номер не сопоставлен — {error, candidates|available}.
+    Ограничения: только чтение."""
+    async with async_session_maker() as session:
+        return _json(await tools.car_documents(session, plate))
+
+
 # ASGI-приложение streamable-HTTP (монтируется в app/main.py).
 mcp_app = mcp.streamable_http_app()

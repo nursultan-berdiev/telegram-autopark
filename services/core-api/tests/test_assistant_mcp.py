@@ -77,7 +77,8 @@ async def test_mcp_server_initialize_and_tools_list():
             assert r.status_code == 200 and "fleet" in r.text
             tl = await c.post("/", headers=ok, json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
             assert "fleet_overview" in tl.text and "blocked_cars" in tl.text
-            assert "block_history" in tl.text  # новый инструмент истории блокировок
+            assert "block_history" in tl.text  # инструмент истории блокировок
+            assert "car_photo_inspections" in tl.text and "car_documents" in tl.text
             # Без токена — отказ ещё до MCP.
             bad = await c.post("/", headers={k: v for k, v in ok.items() if k != "Authorization"}, json=init)
             assert bad.status_code == 401
