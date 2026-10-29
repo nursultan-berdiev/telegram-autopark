@@ -1,6 +1,9 @@
 """Расписания фоновых задач: домен, валидация периода и HTTP."""
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
 import pytest
 from app.db.models import PeriodicTask, TaskRun, TaskRunStatus
 from app.domain import periodic as periodic_service
@@ -298,7 +301,7 @@ async def test_run_now_broker_down_is_503_and_closes_run(admin_client, session, 
 # --- планировщик: расписание переживает пересборку ---------------------------
 
 
-def _scheduler_with(rows):
+def _scheduler_with(rows, app=None):
     """Планировщик поверх подставленной таблицы: БД для этого не нужна."""
     from app.tasks.beat import DatabaseScheduler
     from app.tasks.celery_app import celery_app
@@ -307,7 +310,7 @@ def _scheduler_with(rows):
         def _rows(self):
             return rows
 
-    return Fake(app=celery_app, lazy=True)
+    return Fake(app=app or celery_app, lazy=True)
 
 
 def test_entry_keeps_last_run_from_db():
@@ -372,3 +375,63 @@ def test_broken_schedule_does_not_break_the_rest():
     entries = _scheduler_with([broken, good])._build()
 
     assert list(entries) == ["живое"]
+
+
+# --- планировщик: рестарт beat не шлёт рассылки вне расписания ----------------
+
+PARK_TZ = ZoneInfo("Asia/Bishkek")
+
+
+def _park_app(now_utc):
+    """Свой celery с поясом парка: тест не зависит от TZ окружения."""
+    from celery import Celery
+
+    app = Celery("beat-test")
+    app.conf.update(timezone="Asia/Bishkek", enable_utc=True)
+    app.now = lambda: now_utc.astimezone(PARK_TZ)
+    return app
+
+
+def _cron_row(crontab, last_run_at):
+    return PeriodicTask(
+        id=1, name="задача", task=TASK, crontab=crontab,
+        interval_seconds=None, args=None, enabled=True, last_run_at=last_run_at,
+    )
+
+
+# Прод 29.10: beat перезапущен в 18:57 UTC (00:57 30.10 по Бишкеку); до этого
+# каждая задача отработала в срок, в БД время запуска в UTC.
+RESTART = datetime(2026, 10, 29, 18, 57, tzinfo=timezone.utc)
+
+
+@pytest.mark.parametrize(
+    "crontab,last_run_utc,next_local",
+    [
+        ("0 9 * * *", (29, 3, 0), "30.10 09:00"),  # утреннее напоминание
+        ("0 10 * * *", (29, 4, 0), "30.10 10:00"),  # фотоконтроль
+        ("45 21 * * *", (29, 15, 45), "30.10 21:45"),  # предупреждение до срока
+        ("0 22 * * *", (29, 16, 0), "30.10 22:00"),  # «блокировка включена»
+        ("10 22 * * *", (29, 16, 10), "30.10 22:10"),  # админ-дайджест
+    ],
+)
+def test_restart_keeps_park_time(crontab, last_run_utc, next_local):
+    """Утренние уходили сразу при старте, вечерние — ночью (по часам UTC)."""
+    day, hour, minute = last_run_utc
+    row = _cron_row(crontab, datetime(2026, 10, day, hour, minute, tzinfo=timezone.utc))
+
+    entry = _scheduler_with([row], app=_park_app(RESTART))._build()["задача"]
+    state = entry.is_due()
+
+    assert state.is_due is False
+    next_run = (RESTART + timedelta(seconds=state.next)).astimezone(PARK_TZ)
+    assert f"{next_run:%d.%m %H:%M}" == next_local
+
+
+def test_morning_task_due_at_park_morning():
+    """Обратная сторона: в 09:00 по Бишкеку утренняя задача всё-таки уходит."""
+    row = _cron_row("0 9 * * *", datetime(2026, 10, 29, 3, 0, tzinfo=timezone.utc))
+    now = datetime(2026, 10, 30, 3, 0, 5, tzinfo=timezone.utc)
+
+    entry = _scheduler_with([row], app=_park_app(now))._build()["задача"]
+
+    assert entry.is_due().is_due is True
