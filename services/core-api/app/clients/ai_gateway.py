@@ -101,6 +101,19 @@ _OWNER_SYSTEM = (
     "недостаточно, честно скажи об этом. Не выдумывай цифры."
 )
 
+# Проверка ответа владельцу (см. _is_answer).
+_CYRILLIC = re.compile(r"[А-Яа-яЁё]")
+_META_LEAD = re.compile(r"(?i)^the\b")
+_LATIN_TOKEN = re.compile(r"[a-z]+")
+# Англ. служебные слова: в мета-фразе модели их много, в названиях моделей авто
+# («Toyota Land Cruiser», «Kia Rio X-Line») — ни одного.
+_EN_FUNCTION_WORDS = frozenset(
+    "the a an i you he she we they it this that these those is are was were be been am "
+    "do does did can could will would should may might must to of in on at for from "
+    "with by about into and or but not no just so if as what which who my your their its".split()
+)
+_NO_ANSWER = "Не удалось сформировать ответ — переформулируйте, пожалуйста, вопрос."
+
 
 def _owner_tools_system() -> str:
     """Системный промпт режима инструментов: общий принцип поведения агента.
@@ -279,7 +292,34 @@ async def answer_owner_query(
         text = await _answer_owner_query_cli(question, context_text, history)
     else:
         text = await _answer_owner_query_api(question, context_text, history)
-    return _strip_meta_preamble(text)
+    # Одна проверка для всех бэкендов (http/cli/api): мусор вместо ответа не отдаём.
+    text = _strip_meta_preamble(text)
+    return text if _is_answer(text) else _NO_ANSWER
+
+
+def _is_answer(text: str) -> bool:
+    """Годится ли текст (уже после `_strip_meta_preamble`) как ответ владельцу.
+
+    Кириллицу НЕ требуем: валидный ответ бывает и из одного номера или числа
+    («138AAA02», «12 500»). Отбрасываем то, что модель изредка выдаёт ВМЕСТО ответа:
+      * пусто;
+      * осталась служебная строка с ведущим англ. «The …» — тела под ней не было
+        (иначе её убрал бы срез), даже если внутри есть кириллица
+        («The вопрос владельца: …», «The user asks: кто заблокирован?»);
+      * английская фраза без кириллицы — 2+ англ. служебных слова («I can answer
+        directly from…»). Считаем именно служебные слова, а не любые латинские:
+        голое название модели («Toyota Land Cruiser») — валидный ответ.
+    Компромисс (принят в #50): русский ответ, начинающийся с латинского «The…»,
+    тоже не пройдёт.
+    """
+    t = (text or "").strip()
+    if not t or _META_LEAD.match(t):
+        return False
+    if not _CYRILLIC.search(t) and sum(
+        w in _EN_FUNCTION_WORDS for w in _LATIN_TOKEN.findall(t.lower())
+    ) >= 2:
+        return False
+    return True
 
 
 def _strip_meta_preamble(text: str) -> str:
@@ -376,7 +416,7 @@ async def _answer_owner_query_api(
         messages=messages,
     )
     parts = [b.text for b in response.content if b.type == "text"]
-    return "\n".join(parts).strip() or "Не удалось сформировать ответ."
+    return "\n".join(parts).strip()
 
 
 # --------------------------------------------------------------------------
@@ -489,7 +529,7 @@ async def _answer_owner_query_cli(
         settings.assistant_model,
     ]
     envelope = await _run_claude_cli(args)
-    return str(envelope.get("result") or "").strip() or "Не удалось сформировать ответ."
+    return str(envelope.get("result") or "").strip()
 
 
 # --------------------------------------------------------------------------
@@ -574,8 +614,10 @@ async def _answer_via_tools(
     """ИИ сам дёргает MCP-сервер fleet под вопрос. None — пустой ответ (на фолбэк)."""
     body = await _gateway_post("/v1/prompt", _tools_payload(question, history))
     text = str(body.get("text") or "").strip()
-    if not text:
-        logger.warning("ассистент (инструменты): gateway вернул пустой ответ")
+    if not _is_answer(_strip_meta_preamble(text)):
+        # Пусто или одна служебная строка без ответа («The user's question… No
+        # tools needed.»): владельцу такое не показываем — уходим в фолбэк.
+        logger.warning("ассистент (инструменты): пустой или служебный ответ — фолбэк")
         return None
     return text
 
@@ -600,4 +642,4 @@ async def _answer_owner_query_http(
             "model": settings.assistant_model,
         },
     )
-    return str(body.get("text") or "").strip() or "Не удалось сформировать ответ."
+    return str(body.get("text") or "").strip()

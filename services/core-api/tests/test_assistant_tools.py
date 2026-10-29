@@ -432,3 +432,105 @@ async def test_car_documents(session):
     assert d["added"] is not None
     # Неизвестный номер — ошибка.
     assert "error" in await tools.car_documents(session, "777")
+
+
+# --- ответ из одной служебной англ. строки без ответа -> фолбэк ---------------
+
+_META_ONLY = ("The user's question is just asking what they asked about earlier — "
+              "I can answer directly from the conversation history. No tools needed.")
+
+
+def _tools_on(monkeypatch):
+    monkeypatch.setattr(ai_gateway.settings, "assistant_use_tools", True)
+    monkeypatch.setattr(ai_gateway.settings, "mcp_url", "http://core/mcp/")
+    monkeypatch.setattr(ai_gateway.settings, "mcp_token", "secret")
+
+
+async def test_meta_only_tools_answer_falls_back_to_snapshot(monkeypatch):
+    _tools_on(monkeypatch)
+    calls = []
+
+    async def _post(path, payload, **kw):
+        calls.append(payload)
+        if "mcp_servers" in payload:
+            return {"text": _META_ONLY}          # реальная утечка с прода
+        return {"text": "Да, помню: вы спрашивали про блокировки и штрафы."}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("Ты помнишь что я спрашивал?", "СНИМОК")
+    assert out == "Да, помню: вы спрашивали про блокировки и штрафы."
+    assert len(calls) == 2, "служебный ответ инструментов не показываем — идём в фолбэк"
+
+
+async def test_russian_tools_answer_no_fallback(monkeypatch):
+    _tools_on(monkeypatch)
+    calls = []
+
+    async def _post(path, payload, **kw):
+        calls.append(payload)
+        return {"text": "Сейчас ни одна машина не заблокирована."}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("кто заблокирован?", "СНИМОК")
+    assert out == "Сейчас ни одна машина не заблокирована." and len(calls) == 1
+
+
+async def test_both_meta_only_gives_safe_message(monkeypatch):
+    _tools_on(monkeypatch)
+    monkeypatch.setattr(ai_gateway.settings, "ai_backend", "http")
+
+    async def _post(path, payload, **kw):
+        return {"text": _META_ONLY}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway.answer_owner_query("?", "СНИМОК")   # через диспетчер
+    assert out == ai_gateway._NO_ANSWER and "The user" not in out
+
+
+async def test_mixed_alphabet_meta_line_from_tools_falls_back(monkeypatch):
+    # Одна мета-строка со смешанным алфавитом без тела — раньше проходила по «кириллице».
+    _tools_on(monkeypatch)
+    calls = []
+
+    async def _post(path, payload, **kw):
+        calls.append(payload)
+        if "mcp_servers" in payload:
+            return {"text": "The вопрос владельца: помнит ли он что спрашивал ранее."}
+        return {"text": "Да, помню: вы спрашивали про блокировки."}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _post)
+    out = await ai_gateway._answer_owner_query_http("помнишь?", "СНИМОК")
+    assert out == "Да, помню: вы спрашивали про блокировки." and len(calls) == 2
+
+
+async def test_dispatcher_guards_api_and_cli_backends(monkeypatch):
+    # Защита одна на все бэкенды: api/cli не отдают владельцу служебную строку.
+    for backend, fn in (("api", "_answer_owner_query_api"), ("cli", "_answer_owner_query_cli")):
+        monkeypatch.setattr(ai_gateway, "_resolve_backend", lambda b=backend: b)
+
+        async def _meta(*a, **k):
+            return _META_ONLY
+
+        async def _num(*a, **k):
+            return "12 500"
+
+        monkeypatch.setattr(ai_gateway, fn, _meta)
+        assert await ai_gateway.answer_owner_query("?", "С") == ai_gateway._NO_ANSWER
+        monkeypatch.setattr(ai_gateway, fn, _num)
+        assert await ai_gateway.answer_owner_query("сумма?", "С") == "12 500"
+
+
+def test_is_answer():
+    ok = ai_gateway._is_answer
+    assert ok("Да, помню.")
+    assert ok("01KG138API — 4 штрафа")
+    # валидные ответы без кириллицы — не отбрасываем
+    assert ok("138AAA02") and ok("12 500") and ok("Hyundai Sonata 2019")
+    # голое латинское название из 3+ слов — тоже валидный ответ (замечание ревью)
+    assert ok("Toyota Land Cruiser") and ok("Kia Rio X-Line")
+    # мусор вместо ответа
+    assert not ok("") and not ok("   ")
+    assert not ok(_META_ONLY)
+    assert not ok("The user asks: кто заблокирован?")           # смешанный алфавит
+    assert not ok("The вопрос владельца: помнит ли он что спрашивал ранее.")
+    assert not ok("I can answer directly from the conversation history.")
