@@ -434,3 +434,16 @@ async def list_inspections(
         .limit(limit)
     )
     return [InspectionView(*row) for row in rows.all()]
+
+
+async def list_inspections_by_car(
+    session: AsyncSession, car_id: int, *, limit: int = 10
+) -> list[InspectionView]:
+    """Последние фотоконтроли по МАШИНЕ, свежие первыми (для ассистента/отчётов)."""
+    rows = await session.execute(
+        _views_query()
+        .where(PhotoInspection.car_id == car_id)
+        .order_by(PhotoInspection.created_at.desc(), PhotoInspection.id.desc())
+        .limit(limit)
+    )
+    return [InspectionView(*row) for row in rows.all()]
