@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     # публикуется; защищён CORE_API_TOKEN.
     media_host: str = Field(default="0.0.0.0", alias="BOT_MEDIA_HOST")
     media_port: int = Field(default=8081, alias="BOT_MEDIA_PORT")
+    # SOCKS/HTTP-прокси для сессии бота к Telegram. Пусто → прямое соединение
+    # (прод). Задаётся только там, где api.telegram.org недоступен напрямую
+    # (dev — через SOCKS-туннель), формат socks5://host:port.
+    telegram_proxy: str = Field(default="", alias="TELEGRAM_PROXY")
 
     # Часовой пояс парка нужен петлям планировщика бота. Расписание самих
     # напоминаний/уведомлений живёт в periodic_tasks (celery-beat), не здесь.
