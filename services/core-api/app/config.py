@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     assistant_use_tools: bool = Field(default=True, alias="ASSISTANT_USE_TOOLS")
     mcp_url: str = Field(default="", alias="MCP_URL")
     mcp_token: str = Field(default="", alias="MCP_TOKEN")
+    # Модель ассистента владельца (режим инструментов и снимок-фолбэк). Отдельно от
+    # gateway_model, на котором распознаются чеки: ассистенту нужна более сильная
+    # модель для рассуждения по инструментам. Псевдоним (не пин версии) — «последний
+    # актуальный Opus», как просил владелец.
+    assistant_model: str = Field(default="opus", alias="ASSISTANT_MODEL")
 
     files_dir: Path = Field(default=Path("./storage"), alias="FILES_DIR")
     timezone: str = Field(default="Asia/Bishkek", alias="TZ")

@@ -182,3 +182,92 @@ async def test_gateway_fallback_to_snapshot_when_disabled(monkeypatch):
     assert out == "ответ"
     assert "mcp_servers" not in captured["payload"]
     assert "ДАННЫЕ-СНИМКА" in captured["payload"]["prompt"], "выключено → старый снимок-путь"
+
+
+# --- новое: терпимый поиск по номеру, история блокировок, память разговора ----
+
+
+async def test_car_state_partial_and_normalized_plate(session):
+    await _car(session, plate="01KG195API", engine_blocked=True)
+    # неполный номер
+    st = await tools.car_state(session, "195")
+    assert st.get("plate") == "01KG195API" and st.get("engine_blocked") is True
+    # регистр и пробелы
+    st2 = await tools.car_state(session, "01kg 195 api")
+    assert st2.get("plate") == "01KG195API"
+
+
+async def test_car_state_ambiguous_plate_lists_candidates(session):
+    await _car(session, plate="01KG195API")
+    await _car(session, plate="02KG195BPX")
+    res = await tools.car_state(session, "195")
+    assert "car_id" not in res and "error" in res
+    assert set(res["candidates"]) == {"01KG195API", "02KG195BPX"}
+
+
+async def test_car_state_unknown_plate_lists_available(session):
+    await _car(session, plate="01KG195API")
+    res = await tools.car_state(session, "777")
+    assert "error" in res and res["available"] == ["01KG195API"]
+
+
+async def test_fines_by_partial_plate(session):
+    car = await _car(session, plate="01KG138API")
+    session.add(Fine(car_id=car.id, issued_at=NOW, status=FineStatus.unpaid, external_ref="r1", article="ст.187", amount=1000.0))
+    await session.commit()
+    rows = await tools.fines(session, "138")  # неполный номер должен сработать
+    assert len(rows) == 1 and rows[0]["plate"] == "01KG138API" and rows[0]["article"] == "ст.187"
+
+
+async def test_block_history(session):
+    car = await _car(session, plate="01KG138API", engine_blocked=False)
+    # Хронология (id по возрастанию): блок за штрафы (исполнен), снят вручную
+    # админом 123, затем блок за аренду не удался.
+    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.acked, source="fines", created_at=NOW, updated_at=NOW, acked_at=NOW))
+    await session.flush()
+    session.add(Command(car_id=car.id, type=CommandType.engine_resume, status=CommandStatus.acked, source="manual", requested_by=123, created_at=NOW, updated_at=NOW, acked_at=NOW))
+    await session.flush()
+    session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.failed, source="overdue", created_at=NOW, updated_at=NOW))
+    await session.commit()
+
+    hist = await tools.block_history(session, "138")  # и номер неполный
+    assert hist["plate"] == "01KG138API" and hist["currently_blocked"] is False
+    ev = hist["events"]
+    assert len(ev) == 3
+    # Новые сверху.
+    assert ev[0]["action"] == "блокировка" and ev[0]["reason"] == "за аренду" and ev[0]["status"] == "не удалось"
+    assert ev[1]["action"] == "разблокировка" and ev[1]["reason"] == "вручную" and ev[1]["by_admin_id"] == 123
+    assert ev[2]["action"] == "блокировка" and ev[2]["reason"] == "за штрафы" and ev[2]["status"] == "исполнено"
+    # Авто-команды без «кто».
+    assert ev[0]["by_admin_id"] is None and ev[2]["by_admin_id"] is None
+
+
+async def test_tools_payload_carries_history_and_opus_model(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(ai_gateway.settings, "assistant_use_tools", True)
+    monkeypatch.setattr(ai_gateway.settings, "mcp_url", "http://core/mcp/")
+    monkeypatch.setattr(ai_gateway.settings, "mcp_token", "secret")
+    monkeypatch.setattr(ai_gateway.settings, "assistant_model", "opus")
+    captured = {}
+
+    async def _fake_post(path, payload, **kw):
+        captured["payload"] = payload
+        return {"text": "ответ"}
+
+    monkeypatch.setattr(ai_gateway, "_gateway_post", _fake_post)
+    history = [
+        SimpleNamespace(role="user", text="Сколько машин?"),
+        SimpleNamespace(role="assistant", text="Пять."),
+    ]
+    out = await ai_gateway._answer_owner_query_http("а свободных?", "СНИМОК", history)
+    assert out == "ответ"
+    p = captured["payload"]
+    assert p["model"] == "opus", "ассистент ходит на выбранной модели (Opus)"
+    assert "Сколько машин?" in p["prompt"] and "Пять." in p["prompt"]
+    assert "Новый вопрос владельца: а свободных?" in p["prompt"]
+
+
+async def test_compose_owner_prompt_without_history_is_bare_question():
+    assert ai_gateway._compose_owner_prompt("вопрос", None) == "вопрос"
+    assert ai_gateway._compose_owner_prompt("вопрос", []) == "вопрос"

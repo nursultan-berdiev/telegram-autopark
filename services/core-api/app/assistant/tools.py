@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
+from app.db.models import CommandType
 from app.domain import alerts as alerts_domain
 from app.domain import cars as cars_domain
 from app.domain import commands as commands_domain
@@ -22,6 +23,7 @@ from app.domain import telemetry as telemetry_domain
 # Окно recent_payments и предел выдачи — защита от мусорных `hours` от LLM.
 RECENT_HOURS_MAX = 720  # 30 суток
 RECENT_LIMIT = 200
+BLOCK_HISTORY_LIMIT = 20
 
 # Человекочитаемое состояние блока по статусу команды.
 _BLOCK_STATE = {
@@ -32,6 +34,20 @@ _BLOCK_STATE = {
     "unconfirmed": "заглушён (не подтверждено телеметрией)",
 }
 
+# Источник команды → почему: ручной админ / авто за аренду / авто за штрафы.
+_SOURCE_LABEL = {"manual": "вручную", "overdue": "за аренду", "fines": "за штрафы"}
+
+# Статус команды двигателя — человекочитаемо (для истории блокировок).
+_CMD_STATUS_LABEL = {
+    "queued": "в полёте",
+    "sent": "в полёте",
+    "armed": "взведено (сработает на остановке)",
+    "acked": "исполнено",
+    "unconfirmed": "исполнено (не подтверждено телеметрией)",
+    "failed": "не удалось",
+    "blocked_by_safety": "отклонено защитой (машина не стояла)",
+}
+
 
 def _num(value: Any) -> Any:
     return float(value) if isinstance(value, Decimal) else value
@@ -39,6 +55,47 @@ def _num(value: Any) -> Any:
 
 def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt is not None else None
+
+
+def _normalize_plate(value: str) -> str:
+    """Номер к сравнимому виду: верхний регистр, только буквы/цифры (без пробелов/дефисов)."""
+    return "".join(ch for ch in value.upper() if ch.isalnum())
+
+
+async def _resolve_plate(session, plate: str) -> dict:
+    """Терпимый поиск машины по номеру — для read-only инструментов ассистента.
+
+    Возврат (JSON-дружелюбный):
+      {"car_id": int, "plate": str}            — найдено однозначно;
+      {"error": str, "candidates": [...]}      — подходит несколько, нужна точность;
+      {"error": str, "available": [...]}       — не найдено (даю список номеров парка).
+
+    Общий `cars.find_id_by_plate` (им шлёт команды бот) намеренно не трогаем: там
+    нужна строгая точность, иначе можно заблокировать не ту машину.
+    """
+    pm = await cars_domain.plate_map(session)  # {car_id: plate}
+    for cid, pl in pm.items():  # точное совпадение как есть
+        if pl == plate:
+            return {"car_id": cid, "plate": pl}
+    q = _normalize_plate(plate)
+    if not q:
+        return {"error": "не указан номер машины", "available": sorted(pm.values())}
+    norm = {cid: _normalize_plate(pl) for cid, pl in pm.items()}
+    exact = [cid for cid, n in norm.items() if n == q]
+    if len(exact) == 1:
+        return {"car_id": exact[0], "plate": pm[exact[0]]}
+    subs = [cid for cid, n in norm.items() if q and (q in n or n in q)]
+    if len(subs) == 1:
+        return {"car_id": subs[0], "plate": pm[subs[0]]}
+    if len(subs) > 1:
+        return {
+            "error": f"по «{plate}» подходит несколько машин — уточните номер",
+            "candidates": sorted(pm[c] for c in subs),
+        }
+    return {
+        "error": f"машина с номером «{plate}» не найдена",
+        "available": sorted(pm.values()),
+    }
 
 
 async def fleet_overview(session) -> dict:
@@ -99,9 +156,10 @@ async def recent_payments(session, hours: int = 24) -> dict:
 
 async def car_state(session, plate: str) -> dict:
     """Где машина и её состояние: онлайн, координаты, едет/стоит, зажигание, блок."""
-    car_id = await cars_domain.find_id_by_plate(session, plate)
-    if car_id is None:
-        return {"error": f"машина с номером {plate} не найдена"}
+    res = await _resolve_plate(session, plate)
+    if "car_id" not in res:
+        return res
+    car_id, plate = res["car_id"], res["plate"]
     st = await telemetry_domain.get_state(session, car_id)
     if st is None:
         return {"plate": plate, "online": False, "note": "нет телеметрии"}
@@ -123,9 +181,10 @@ async def fines(session, plate: str | None = None) -> list[dict]:
     """Неоплаченные штрафы: по всему парку или по конкретной машине (по номеру)."""
     car_id = None
     if plate is not None:
-        car_id = await cars_domain.find_id_by_plate(session, plate)
-        if car_id is None:
-            return [{"error": f"машина с номером {plate} не найдена"}]
+        res = await _resolve_plate(session, plate)
+        if "car_id" not in res:
+            return [res]  # ошибка/варианты одним элементом — список сохраняем
+        car_id = res["car_id"]
     rows = await fines_domain.list_fleet_fines(session, car_id=car_id, only_unpaid=True)
     return [
         {
@@ -176,3 +235,41 @@ async def blocked_cars(session) -> list[dict]:
         if st.engine_blocked and car_id not in seen:
             out.append({"plate": plates.get(car_id), "state": "заглушён", "source": None})
     return out
+
+
+async def block_history(session, plate: str) -> dict:
+    """История блокировок двигателя машины: когда, за что и чем снято, плюс «сейчас».
+
+    Берём команды двигателя (блок/разблок) этой машины от новых к старым. По каждой:
+    когда, действие (блокировка/разблокировка), причина (вручную/за аренду/за штрафы),
+    статус (исполнено/не удалось/…), кто (id админа — только для ручных), когда
+    подтверждено. `currently_blocked` — текущее состояние по телеметрии.
+    """
+    res = await _resolve_plate(session, plate)
+    if "car_id" not in res:
+        return res
+    car_id, plate = res["car_id"], res["plate"]
+
+    events: list[dict] = []
+    for cm in await commands_domain.list_commands(session, car_id):
+        if cm.type not in (CommandType.engine_stop, CommandType.engine_resume):
+            continue
+        events.append(
+            {
+                "at": _iso(cm.created_at),
+                "action": (
+                    "блокировка" if cm.type == CommandType.engine_stop else "разблокировка"
+                ),
+                "reason": _SOURCE_LABEL.get(cm.source, cm.source),
+                "status": _CMD_STATUS_LABEL.get(cm.status.value, cm.status.value),
+                # Кто снял/поставил вручную: id админа. Для авто (аренда/штрафы) — None.
+                "by_admin_id": cm.requested_by if cm.source == "manual" else None,
+                "acked_at": _iso(cm.acked_at),
+            }
+        )
+        if len(events) >= BLOCK_HISTORY_LIMIT:
+            break
+
+    st = await telemetry_domain.get_state(session, car_id)
+    currently_blocked = bool(st.engine_blocked) if st is not None else None
+    return {"plate": plate, "currently_blocked": currently_blocked, "events": events}

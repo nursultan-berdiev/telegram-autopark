@@ -26,7 +26,9 @@ async def query(
     # Через module-attribute (не прямой импорт функции) — иначе тесты не смогут
     # подменить ai_gateway.answer_owner_query через monkeypatch.
     try:
-        answer = await ai_gateway.answer_owner_query(payload.question, snapshot)
+        answer = await ai_gateway.answer_owner_query(
+            payload.question, snapshot, payload.history
+        )
     except Exception as exc:  # noqa: BLE001 — сбой ИИ не должен падать 500-кой
         raise DomainError("ИИ-ассистент недоступен", status_code=502) from exc
     return AssistantAnswer(answer=answer)
