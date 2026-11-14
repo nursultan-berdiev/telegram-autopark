@@ -35,20 +35,29 @@ def _utc(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _payment_dto(payment: Payment, dto: type[PaymentDTO] = PaymentDTO, **extra) -> PaymentDTO:
-    return dto(
-        id=payment.id,
-        driver_id=payment.driver_id,
-        car_id=payment.car_id,
-        amount=payment.amount,
-        paid_at=_utc(payment.paid_at),
-        receipt_file_id=payment.receipt_file_id,
-        receipt_path=payment.receipt_path,
-        receipt_kind=payment.receipt_kind,
-        status=payment.status.value,
-        created_at=_utc(payment.created_at),
-        **extra,
-    )
+def _payment_fields(payment: Payment) -> dict[str, object]:
+    """Поля PaymentDTO из модели — одно место для PaymentDTO и CarPaymentDTO."""
+    return {
+        "id": payment.id,
+        "driver_id": payment.driver_id,
+        "car_id": payment.car_id,
+        "amount": payment.amount,
+        "paid_at": _utc(payment.paid_at),
+        "receipt_file_id": payment.receipt_file_id,
+        "receipt_path": payment.receipt_path,
+        "receipt_kind": payment.receipt_kind,
+        "status": payment.status.value,
+        "created_at": _utc(payment.created_at),
+    }
+
+
+def _payment_dto(payment: Payment) -> PaymentDTO:
+    return PaymentDTO(**_payment_fields(payment))
+
+
+def _car_payment_dto(payment: Payment, driver_name: str | None) -> CarPaymentDTO:
+    """Оплата в истории машины: поля оплаты плюс имя водителя, который платил."""
+    return CarPaymentDTO(**_payment_fields(payment), driver_name=driver_name)
 
 
 def _to_recognized(dto: RecognizedReceiptDTO | None) -> RecognizedReceipt:
@@ -158,4 +167,4 @@ async def list_car_payments(
     if await cars_service.get_car(session, car_id) is None:
         raise NotFound(f"машина {car_id} не найдена")
     rows = await pay.list_payments_by_car(session, car_id, limit=limit)
-    return [_payment_dto(payment, CarPaymentDTO, driver_name=name) for payment, name in rows]
+    return [_car_payment_dto(payment, name) for payment, name in rows]

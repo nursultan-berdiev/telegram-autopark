@@ -22,6 +22,7 @@ from app.db.models import (
     SchedulePeriod,
 )
 from app.domain import alerts as alerts_domain
+from app.domain import drivers as drivers_domain
 from app.domain import photo_inspections as photo_domain
 from app.domain import schedules as sched
 
@@ -53,25 +54,25 @@ def _inspection(driver_id, car_id, created_at):
 
 
 async def test_overview_card_collects_everything_about_car(session, client):
-    NOW = _now()
+    now = _now()
     car, drv = await _car(session, "01KG195API", driver="Иванов", photo="tg-photo")
     free, _ = await _car(session, "01KG999API")
     # Последняя — по дате из чека, а не по порядку приёма: чек за прошлую неделю,
     # присланный позже, не должен стать «последней оплатой».
     session.add(Payment(driver_id=drv.id, car_id=car.id, amount=1500,
-                        paid_at=NOW - timedelta(hours=1)))
+                        paid_at=now - timedelta(hours=1)))
     await session.flush()
     session.add(Payment(driver_id=drv.id, car_id=car.id, amount=900,
-                        paid_at=NOW - timedelta(days=5)))
-    session.add(CarState(car_id=car.id, last_ts=NOW, engine_blocked=False))
+                        paid_at=now - timedelta(days=5)))
+    session.add(CarState(car_id=car.id, last_ts=now, engine_blocked=False))
     session.add(Command(car_id=car.id, type=CommandType.engine_stop, status=CommandStatus.armed,
-                        source="overdue", created_at=NOW, updated_at=NOW))
-    due = photo_domain.local_today(NOW) - timedelta(days=2)
+                        source="overdue", created_at=now, updated_at=now))
+    due = photo_domain.local_today(now) - timedelta(days=2)
     session.add(PhotoSchedule(driver_id=drv.id, next_due_on=due))
-    session.add(_inspection(drv.id, car.id, NOW - timedelta(days=9)))
-    session.add(Fine(car_id=car.id, issued_at=NOW, status=FineStatus.unpaid, external_ref="u1"))
-    session.add(Fine(car_id=car.id, issued_at=NOW, status=FineStatus.unpaid, external_ref="u2"))
-    session.add(Fine(car_id=car.id, issued_at=NOW, status=FineStatus.paid, external_ref="p1"))
+    session.add(_inspection(drv.id, car.id, now - timedelta(days=9)))
+    session.add(Fine(car_id=car.id, issued_at=now, status=FineStatus.unpaid, external_ref="u1"))
+    session.add(Fine(car_id=car.id, issued_at=now, status=FineStatus.unpaid, external_ref="u2"))
+    session.add(Fine(car_id=car.id, issued_at=now, status=FineStatus.paid, external_ref="p1"))
     await alerts_domain.raise_alert(
         session, car_id=car.id, atype=AlertType.overdue_payment, payload={}, text="просрочка"
     )
@@ -79,7 +80,7 @@ async def test_overview_card_collects_everything_about_car(session, client):
                       payload={}))
     await sched.set_schedule(
         session, driver_id=drv.id, period=SchedulePeriod.daily, interval_days=None,
-        amount=1800.0, next_due_date=NOW - timedelta(days=3),
+        amount=1800.0, next_due_date=now - timedelta(days=3),
     )
     await session.commit()
 
@@ -113,7 +114,7 @@ async def test_overview_empty_fleet_and_auth(client):
 
 
 async def test_car_payments_from_any_driver_newest_first(session, client):
-    NOW = _now()
+    now = _now()
     car, drv = await _car(session, "01KG195API", driver="Иванов")
     other, _ = await _car(session, "01KG999API")
     # Прежний водитель машины уже уволен — его оплаты остаются в истории машины.
@@ -121,10 +122,10 @@ async def test_car_payments_from_any_driver_newest_first(session, client):
     session.add(old)
     await session.flush()
     session.add(Payment(driver_id=old.id, car_id=car.id, amount=700,
-                        paid_at=NOW - timedelta(days=10)))
+                        paid_at=now - timedelta(days=10)))
     session.add(Payment(driver_id=drv.id, car_id=car.id, amount=1500,
-                        paid_at=NOW - timedelta(days=1)))
-    session.add(Payment(driver_id=drv.id, car_id=other.id, amount=999, paid_at=NOW))
+                        paid_at=now - timedelta(days=1)))
+    session.add(Payment(driver_id=drv.id, car_id=other.id, amount=999, paid_at=now))
     await session.commit()
 
     resp = await client.get(f"/cars/{car.id}/payments")
@@ -137,12 +138,12 @@ async def test_car_payments_from_any_driver_newest_first(session, client):
 
 
 async def test_car_photo_inspections_by_car(session, client):
-    NOW = _now()
+    now = _now()
     car, drv = await _car(session, "01KG195API", driver="Иванов")
     other, drv2 = await _car(session, "01KG999API", driver="Сидоров")
-    session.add(_inspection(drv.id, car.id, NOW - timedelta(days=7)))
-    session.add(_inspection(drv.id, car.id, NOW - timedelta(days=1)))
-    session.add(_inspection(drv2.id, other.id, NOW))
+    session.add(_inspection(drv.id, car.id, now - timedelta(days=7)))
+    session.add(_inspection(drv.id, car.id, now - timedelta(days=1)))
+    session.add(_inspection(drv2.id, other.id, now))
     await session.commit()
 
     resp = await client.get(f"/cars/{car.id}/photo-inspections")
@@ -164,3 +165,33 @@ async def test_car_history_limit_bounds(session, client, path):
     car, _ = await _car(session, "01KG195API")
     await session.commit()
     assert (await client.get(f"/cars/{car.id}/{path}")).status_code == 422
+
+
+async def test_active_by_car_skips_fired_and_free(session):
+    car, drv = await _car(session, "01KG195API", driver="Иванов")
+    free, _ = await _car(session, "01KG999API")
+    session.add(Driver(tg_user_id=next(_TG_IDS), full_name="Уволен", phone="+3", inn="3",
+                       car_id=free.id, active=False))
+    await session.commit()
+
+    active = await drivers_domain.active_by_car(session)
+    assert {car_id: d.id for car_id, d in active.items()} == {car.id: drv.id}
+    assert list(await drivers_domain.active_by_car(session, [free.id])) == []
+    assert await drivers_domain.active_by_car(session, []) == {}
+
+
+async def test_last_inspection_by_car_counts_any_driver(session):
+    now = _now()
+    car, drv = await _car(session, "01KG195API", driver="Иванов")
+    old = Driver(tg_user_id=next(_TG_IDS), full_name="Прежний", phone="+4", inn="4",
+                 car_id=None, active=False)
+    session.add(old)
+    await session.flush()
+    session.add(_inspection(drv.id, car.id, now - timedelta(days=9)))
+    session.add(_inspection(old.id, car.id, now - timedelta(days=2)))  # сдал прежний водитель
+    session.add(_inspection(drv.id, None, now))  # машину удалили — в счёт не идёт
+    await session.commit()
+
+    last = await photo_domain.last_by_car(session)
+    assert set(last) == {car.id}
+    assert last[car.id].replace(tzinfo=None) == (now - timedelta(days=2)).replace(tzinfo=None)
