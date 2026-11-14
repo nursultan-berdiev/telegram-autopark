@@ -2,17 +2,8 @@ import { Link, useParams } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { Async, Card, fmtDate } from "../components/ui";
 import { MediaImage } from "../components/Media";
+import { INSPECTION_ANGLES as ANGLES } from "../lib/inspection";
 import type { PhotoInspection } from "../lib/types";
-
-// Ракурс → подпись и поле file_id в DTO (null = фото нет, напр. бока у старых осмотров).
-const ANGLES: { key: string; label: string; field: keyof PhotoInspection }[] = [
-  { key: "front", label: "Перёд", field: "front_file_id" },
-  { key: "left", label: "Левый бок", field: "left_file_id" },
-  { key: "rear", label: "Зад", field: "rear_file_id" },
-  { key: "right", label: "Правый бок", field: "right_file_id" },
-  { key: "interior_front", label: "Салон спереди", field: "interior_front_file_id" },
-  { key: "interior_rear", label: "Салон сзади", field: "interior_rear_file_id" },
-];
 
 export default function InspectionAlbum() {
   const { id } = useParams();
@@ -20,7 +11,7 @@ export default function InspectionAlbum() {
   return (
     <>
       <p>
-        <Link to={insp.data?.car_id ? `/cars/${insp.data.car_id}?tab=photo` : "/"}>← К машине</Link>
+        <Link to={insp.data?.car_id ? `/cars/${insp.data.car_id}` : "/"}>← К машине</Link>
       </p>
       <h1>Осмотр №{id}</h1>
       <Async loading={insp.loading} error={insp.error} data={insp.data}>

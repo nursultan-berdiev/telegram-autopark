@@ -44,6 +44,7 @@ class CarCard:
     block: Command | None  # действующая команда блокировки
     last_inspection_at: datetime | None
     photo: photo_domain.PhotoStatus | None  # срок фотоконтроля текущего водителя
+    inspection_days_left: int | None  # до срока по календарю парка, а не браузера
     unpaid_fines: int
     open_alerts: int
 
@@ -72,10 +73,12 @@ async def cards(session: AsyncSession, now: datetime) -> list[CarCard]:
     fines = await _count_by_car(session, Fine, Fine.status == FineStatus.unpaid)
     alerts = await _count_by_car(session, Alert, Alert.status == AlertStatus.open)
 
+    today = photo_domain.local_today(now)
     result: list[CarCard] = []
     for car in cars:
         driver = drivers.get(car.id)
         state = states.get(car.id)
+        status = photo.get(driver.id) if driver else None
         result.append(
             CarCard(
                 car=car,
@@ -86,7 +89,8 @@ async def cards(session: AsyncSession, now: datetime) -> list[CarCard]:
                 online=telemetry_domain.is_online(state, now),
                 block=blocks.get(car.id),
                 last_inspection_at=last_inspections.get(car.id),
-                photo=photo.get(driver.id) if driver else None,
+                photo=status,
+                inspection_days_left=(status.next_due_on - today).days if status else None,
                 unpaid_fines=fines.get(car.id, 0),
                 open_alerts=alerts.get(car.id, 0),
             )
