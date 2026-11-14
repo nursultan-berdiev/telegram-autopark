@@ -111,6 +111,7 @@ function NewTask({ catalog, onDone }: { catalog: Record<string, string>; onDone:
   );
 }
 
+// Вкладка «Автоматизации» в настройках: задачи по всему парку, не по машине.
 export default function Periodic() {
   const tasks = useApi<PeriodicTask[]>("/periodic-tasks");
   const catalog = useApi<Record<string, string>>("/periodic-tasks/catalog");
@@ -118,8 +119,6 @@ export default function Periodic() {
 
   return (
     <>
-      <h1>Периодические задачи</h1>
-
       {catalog.data && <NewTask catalog={catalog.data} onDone={tasks.reload} />}
 
       <Card title="Расписания">

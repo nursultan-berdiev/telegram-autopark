@@ -4,6 +4,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import SearchBox from "./SearchBox";
 import Bell from "./Bell";
+import ThemeMenu from "./ThemeMenu";
 
 // Иконки — те же глифы, что в утверждённом макете (вариант 5).
 const NAV = [
@@ -11,12 +12,11 @@ const NAV = [
   { to: "/cars", label: "Автопарк", icon: "▦" },
   { to: "/drivers", label: "Водители", icon: "◍" },
   { to: "/announcements", label: "Объявления", icon: "◎" },
-  { to: "/periodic", label: "Задачи", icon: "◴" },
-  { to: "/documents", label: "Документы", icon: "◲" },
   { to: "/photo-inspections", label: "Фотоконтроль", icon: "▣" },
   { to: "/assistant", label: "Ассистент", icon: "◈" },
   { to: "/reports", label: "Отчёты", icon: "▤" },
   { to: "/journals", label: "Журналы", icon: "≡" },
+  { to: "/settings", label: "Настройки", icon: "◴" },
 ];
 
 // Карта Traccar открывается в новой вкладке по короткоживущему токену автологина:
@@ -104,6 +104,7 @@ export default function Layout() {
           </button>
           <SearchBox />
           <span className="sp" />
+          <ThemeMenu />
           <Bell />
           <div className="av" title={`tg ${me?.tg_user_id}`}>
             А

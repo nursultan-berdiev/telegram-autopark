@@ -8,8 +8,7 @@ import CarDetail from "./pages/CarDetail";
 import Drivers from "./pages/Drivers";
 import DriverDetail from "./pages/DriverDetail";
 import Announcements from "./pages/Announcements";
-import Periodic from "./pages/Periodic";
-import Documents from "./pages/Documents";
+import Settings from "./pages/Settings";
 import PhotoInspections from "./pages/PhotoInspections";
 import InspectionAlbum from "./pages/InspectionAlbum";
 import Assistant from "./pages/Assistant";
@@ -29,8 +28,10 @@ function Gate() {
         <Route path="drivers" element={<Drivers />} />
         <Route path="drivers/:id" element={<DriverDetail />} />
         <Route path="announcements" element={<Announcements />} />
-        <Route path="periodic" element={<Periodic />} />
-        <Route path="documents" element={<Documents />} />
+        <Route path="settings" element={<Settings />} />
+        {/* Старые адреса пунктов, переехавших в «Настройки». */}
+        <Route path="periodic" element={<Navigate to="/settings?tab=automations" replace />} />
+        <Route path="documents" element={<Navigate to="/settings?tab=documents" replace />} />
         <Route path="photo-inspections" element={<PhotoInspections />} />
         <Route path="photo-inspections/:id" element={<InspectionAlbum />} />
         <Route path="assistant" element={<Assistant />} />
