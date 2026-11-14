@@ -7,7 +7,14 @@ from .announcements import (
     render_announcement,
     telegram_length,
 )
-from .cars import CarCreate, CarDTO, CarStateDTO, TrackerDTO, TrackerUpsert
+from .cars import (
+    CarCreate,
+    CarDTO,
+    CarOverviewDTO,
+    CarStateDTO,
+    TrackerDTO,
+    TrackerUpsert,
+)
 from .commands import CommandDTO, CommandRequest, CommandResult
 from .common import DTO, Problem, Role
 from .documents import (
@@ -39,6 +46,7 @@ from .fleet import (
     TaskRunDTO,
 )
 from .payments import (
+    CarPaymentDTO,
     PaymentCreate,
     PaymentDTO,
     PaymentResult,
@@ -77,11 +85,11 @@ from .telemetry import TelemetryBatchResult, TelemetryPoint
 
 __all__ = [
     "DTO", "Problem", "Role",
-    "CarDTO", "CarCreate", "CarStateDTO", "TrackerDTO", "TrackerUpsert",
+    "CarDTO", "CarCreate", "CarOverviewDTO", "CarStateDTO", "TrackerDTO", "TrackerUpsert",
     "DriverDTO", "DriverStatsDTO", "DriverWithStats", "DriverRegister",
     "MeDTO", "InvitationDTO", "InviteCheckDTO",
     "ScheduleDTO", "ScheduleStatusDTO", "ScheduleWithStatus", "ScheduleUpsert",
-    "PaymentDTO", "PaymentCreate", "PaymentResult", "RecognizedReceiptDTO",
+    "PaymentDTO", "CarPaymentDTO", "PaymentCreate", "PaymentResult", "RecognizedReceiptDTO",
     "CarDriverRow", "UpcomingRow", "DriverTotalRow", "CarTotalRow",
     "ReminderItem", "ReminderPlanDTO", "ReminderMark",
     "DriverNotice", "DriverNoticePlan", "AdminDigest", "OutboundMessageDTO",

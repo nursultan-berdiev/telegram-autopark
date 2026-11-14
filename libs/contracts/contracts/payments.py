@@ -20,6 +20,12 @@ class PaymentDTO(DTO):
     created_at: datetime | None = None
 
 
+class CarPaymentDTO(PaymentDTO):
+    """Оплата в истории машины: платить мог любой водитель, поэтому с именем."""
+
+    driver_name: str | None = None
+
+
 class RecognizedReceiptDTO(DTO):
     # Нечитаемый чек и чек без суммы — разные случаи: первый просят переснять.
     readable: bool = True

@@ -81,6 +81,43 @@ async def list_payments_by_driver(
     return list(result.all())
 
 
+def _moment():
+    # Когда оплатили: дата из чека, а без неё — время приёма чека ботом.
+    return func.coalesce(Payment.paid_at, Payment.created_at)
+
+
+async def list_payments_by_car(
+    session: AsyncSession, car_id: int, *, limit: int = 50
+) -> list[tuple[Payment, str | None]]:
+    """Оплаты по машине от любого водителя, свежие первыми: (платёж, имя водителя)."""
+    rows = await session.execute(
+        select(Payment, Driver.full_name)
+        .join(Driver, Driver.id == Payment.driver_id, isouter=True)
+        .where(Payment.car_id == car_id)
+        .order_by(_moment().desc(), Payment.id.desc())
+        .limit(limit)
+    )
+    return [(payment, name) for payment, name in rows.all()]
+
+
+async def last_by_car(session: AsyncSession) -> dict[int, Payment]:
+    """Последняя оплата каждой машины — одним запросом на весь парк."""
+    ranked = (
+        select(
+            Payment.id,
+            func.row_number()
+            .over(partition_by=Payment.car_id, order_by=(_moment().desc(), Payment.id.desc()))
+            .label("rn"),
+        )
+        .where(Payment.car_id.is_not(None))
+        .subquery()
+    )
+    rows = await session.scalars(
+        select(Payment).join(ranked, ranked.c.id == Payment.id).where(ranked.c.rn == 1)
+    )
+    return {payment.car_id: payment for payment in rows}
+
+
 async def list_recent(
     session: AsyncSession, *, hours: int = 24, limit: int = 50
 ) -> list[tuple[Payment, str | None, str | None]]:
