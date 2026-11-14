@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #f5f6fb;
   --panel: #ffffff;
   --soft: #f3f4fb;
@@ -14,23 +14,31 @@
   --amber: #f59e0b;
   --rose: #f43f5e;
   --sky: #0ea5e9;
+  --lime: #84cc16;
+  --on-accent: #ffffff; /* текст на залитых accent/danger кнопках и бейджах */
   --shadow: 0 10px 30px -12px rgba(39, 44, 94, 0.18);
   --z-dropdown: 50; /* выпадашки поверх залипающего топбара (z-index: 20) */
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15171c;
-    --panel: #1d2026;
-    --soft: #252a33;
-    --border: #2b2f37;
-    --text: #e6e8eb;
-    --muted: #9aa1ab;
-    --accent: #60a5fa;
-    --danger: #f87171;
-    --brand: #818cf8;
-    --brand-soft: rgba(129, 140, 248, 0.16);
-    --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
-  }
+/* Тёмная тема: data-theme ставит src/lib/theme.ts (и inline-скрипт в index.html). */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171c;
+  --panel: #1d2026;
+  --soft: #252a33;
+  --border: #2b2f37;
+  --text: #e6e8eb;
+  --muted: #9aa1ab;
+  --accent: #60a5fa;
+  --danger: #f87171;
+  --brand: #818cf8;
+  --brand-soft: rgba(129, 140, 248, 0.16);
+  --teal: #2dd4bf;
+  --amber: #fbbf24;
+  --rose: #fb7185;
+  --sky: #38bdf8;
+  --lime: #a3e635;
+  --on-accent: #0b1220;
+  --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
 }
 
 * { box-sizing: border-box; }
@@ -152,7 +160,17 @@ a:hover { text-decoration: underline; }
 }
 .iconbtn .dot.err { background: var(--amber); } /* сбой загрузки алертов — не красный «есть N» */
 
-.page { padding: 24px; max-width: 1180px; width: 100%; }
+.theme-menu { position: relative; }
+.theme-menu .menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: var(--z-dropdown);
+  min-width: 170px; padding: 6px; display: flex; flex-direction: column; gap: 2px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+}
+.theme-menu .menu button { border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 9px; }
+.theme-menu .menu button:hover { background: var(--soft); }
+.theme-menu .menu button.on { background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+
+.page { padding: 24px; width: 100%; }
 h1 { font-size: 22px; margin: 0 0 16px; }
 
 /* Мобильная шторка сайдбара */
@@ -174,7 +192,7 @@ button, .link {
   background: var(--panel); color: var(--text); padding: 6px 12px; border-radius: 8px;
 }
 .link { border: none; background: none; color: var(--accent); }
-button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+button.active { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
 
 .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
 
@@ -200,7 +218,7 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 ul.plain li { padding: 6px 0; border-bottom: 1px solid var(--border); }
 
 .badge { font-size: 12px; padding: 1px 6px; border-radius: 6px; background: var(--border); }
-.badge.critical, .badge.error { background: var(--danger); color: #fff; }
+.badge.critical, .badge.error { background: var(--danger); color: var(--on-accent); }
 
 button.danger { color: var(--danger); border-color: var(--danger); background: var(--panel); }
 .actions-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
@@ -275,9 +293,9 @@ select.field { height: 34px; }
   width: 34px; height: 34px; border-radius: 11px; flex: 0 0 auto;
   display: grid; place-items: center; font-size: 17px; font-weight: 800;
 }
-.dash .al.critical .ic { background: rgba(244, 63, 94, 0.15); color: #f43f5e; }
+.dash .al.critical .ic { background: rgba(244, 63, 94, 0.15); color: var(--rose); }
 .dash .al.warning .ic { background: rgba(245, 158, 11, 0.16); color: #d97706; }
-.dash .al.info .ic { background: rgba(14, 165, 233, 0.16); color: #0ea5e9; }
+.dash .al.info .ic { background: rgba(14, 165, 233, 0.16); color: var(--sky); }
 .dash .al-body { flex: 1; min-width: 0; }
 .dash .al .t { font-weight: 600; line-height: 1.35; }
 .dash .al .c { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
@@ -286,8 +304,8 @@ select.field { height: 34px; }
 .dash .fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 4px; }
 .dash .fl { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 13px; }
 .dash .fl .st { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
-.dash .fl .st.free { background: #a3e635; }
-.dash .fl .st.idle { background: #0ea5e9; }
+.dash .fl .st.free { background: var(--lime); }
+.dash .fl .st.idle { background: var(--sky); }
 .dash .fl-body { min-width: 0; }
 .dash .fl .p { font-weight: 700; }
 .dash .fl .mo { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
