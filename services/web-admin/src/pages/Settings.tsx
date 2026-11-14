@@ -1,7 +1,7 @@
 import { useSearchParams } from "react-router-dom";
 import Periodic from "./Periodic";
 import Documents from "./Documents";
-import { pickTab } from "../lib/tabs";
+import { pickTab, withTab } from "../lib/tabs";
 
 // То, что не относится к конкретной машине: автоматизации по всему парку и
 // общие документы. Вкладка — из URL (?tab=), как в журналах: старые адреса
@@ -25,15 +25,19 @@ export default function Settings() {
             key={t.key}
             type="button"
             role="tab"
+            id={`settings-tab-${t.key}`}
+            aria-controls="settings-tabpanel"
             aria-selected={tab === t.key}
             className={tab === t.key ? "active" : ""}
-            onClick={() => setParams({ tab: t.key }, { replace: true })}
+            onClick={() => setParams(withTab(params, t.key), { replace: true })}
           >
             {t.label}
           </button>
         ))}
       </div>
-      {tab === "automations" ? <Periodic /> : <Documents />}
+      <div role="tabpanel" id="settings-tabpanel" aria-labelledby={`settings-tab-${tab}`}>
+        {tab === "automations" ? <Periodic /> : <Documents />}
+      </div>
     </>
   );
 }

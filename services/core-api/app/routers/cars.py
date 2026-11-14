@@ -87,6 +87,7 @@ def _overview_dto(card: car_overview.CarCard) -> CarOverviewDTO:
         last_inspection_at=_utc(card.last_inspection_at),
         inspection_due_on=card.photo.next_due_on if card.photo else None,
         inspection_overdue_days=card.photo.overdue_days if card.photo else 0,
+        inspection_days_left=card.inspection_days_left,
         unpaid_fines=card.unpaid_fines,
         open_alerts=card.open_alerts,
     )

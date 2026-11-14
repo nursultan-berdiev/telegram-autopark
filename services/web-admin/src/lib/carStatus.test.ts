@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { daysUntil, engine, inspectionDue, lastPayment, money, paymentDue } from "./carStatus";
+import { engine, inspectionDue, lastPayment, money, paymentDue } from "./carStatus";
 import type { CarOverview } from "./types";
 
 const NOW = new Date(2026, 10, 14, 12, 0); // 14.11.2026, местное время
@@ -10,7 +10,8 @@ function car(over: Partial<CarOverview> = {}): CarOverview {
     driver_id: 5, driver_name: "Иванов", last_payment_at: null, last_payment_amount: null,
     next_payment_due: null, payment_overdue_days: 0, payment_debt: "0", online: true,
     engine_blocked: false, block_status: null, block_source: null, last_inspection_at: null,
-    inspection_due_on: "2026-11-20", inspection_overdue_days: 0, unpaid_fines: 0, open_alerts: 0,
+    inspection_due_on: "2026-11-20", inspection_overdue_days: 0, inspection_days_left: 6,
+    unpaid_fines: 0, open_alerts: 0,
     ...over,
   };
 }
@@ -42,11 +43,13 @@ describe("карточка машины", () => {
   });
 
   it("фотоконтроль: нет водителя, просрочка, сегодня, завтра, позже", () => {
-    expect(inspectionDue(car({ driver_id: null, inspection_due_on: null })).text).toBe("не нужен: нет водителя");
-    expect(inspectionDue(car({ inspection_overdue_days: 4 })).tone).toBe("bad");
-    expect(inspectionDue(car({ inspection_due_on: "2026-11-14" }), NOW).text).toBe("нужно сделать сегодня");
-    expect(inspectionDue(car({ inspection_due_on: "2026-11-15" }), NOW).text).toBe("нужно сделать завтра");
+    const none = car({ driver_id: null, inspection_due_on: null, inspection_days_left: null });
+    expect(inspectionDue(none).text).toBe("не нужен: нет водителя");
+    expect(inspectionDue(car({ inspection_overdue_days: 4, inspection_days_left: -4 })).tone).toBe("bad");
+    const today = car({ inspection_due_on: "2026-11-14", inspection_days_left: 0 });
+    expect(inspectionDue(today, NOW).text).toBe("нужно сделать сегодня");
+    const tomorrow = car({ inspection_due_on: "2026-11-15", inspection_days_left: 1 });
+    expect(inspectionDue(tomorrow, NOW).text).toBe("нужно сделать завтра");
     expect(inspectionDue(car(), NOW).text).toBe("следующий до 20.11");
-    expect(daysUntil("2026-11-13", NOW)).toBe(-1);
   });
 });

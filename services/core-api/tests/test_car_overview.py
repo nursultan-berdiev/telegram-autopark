@@ -96,13 +96,13 @@ async def test_overview_card_collects_everything_about_car(session, client):
     assert c["online"] is True and c["engine_blocked"] is False
     assert c["block_status"] == "armed" and c["block_source"] == "overdue"
     assert c["last_inspection_at"] is not None
-    assert c["inspection_overdue_days"] == 2
+    assert c["inspection_overdue_days"] == 2 and c["inspection_days_left"] == -2
     assert c["unpaid_fines"] == 2 and c["open_alerts"] == 1
 
     f = cards["01KG999API"]
     assert f["driver_id"] is None and f["has_photo"] is False
     assert f["last_payment_at"] is None and f["next_payment_due"] is None
-    assert f["inspection_due_on"] is None  # без водителя фотоконтроль не нужен
+    assert f["inspection_due_on"] is None and f["inspection_days_left"] is None  # водителя нет
     assert f["block_status"] is None and f["online"] is False
     assert f["unpaid_fines"] == 0 and f["open_alerts"] == 0
 

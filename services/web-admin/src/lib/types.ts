@@ -36,8 +36,20 @@ export interface CarOverview {
   last_inspection_at: string | null;
   inspection_due_on: string | null; // YYYY-MM-DD, день по часам парка
   inspection_overdue_days: number;
+  inspection_days_left: number | null; // до срока по календарю парка; <0 — просрочен
   unpaid_fines: number;
   open_alerts: number;
+}
+
+// GET /cars/{id}/payments — оплата в истории машины (contracts.CarPaymentDTO).
+export interface CarPayment {
+  id: number;
+  driver_id: number;
+  driver_name: string | null;
+  amount: string;
+  paid_at: string | null;
+  receipt_kind: string;
+  created_at: string | null;
 }
 
 export interface Driver {

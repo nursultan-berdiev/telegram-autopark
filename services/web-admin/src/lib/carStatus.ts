@@ -15,26 +15,24 @@ const BLOCK_REASON: Record<string, string> = {
   photo: "за фотоконтроль",
 };
 
+const MONEY = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 });
+const DAY_MONTH = new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit" });
+const FULL_DATE = new Intl.DateTimeFormat("ru-RU");
+
 export function money(value: string | number | null): string {
   if (value == null) return "—";
   const n = Number(value);
   if (!Number.isFinite(n)) return String(value);
-  return `${n.toLocaleString("ru-RU", { maximumFractionDigits: 2 })} сом`;
+  return `${MONEY.format(n)} сом`;
 }
 
-// «14.11» в текущем году, иначе «14.11.2025».
+// «14.11» в текущем году, иначе «14.11.2025». Дата без времени (YYYY-MM-DD) — тот
+// же календарный день в любом поясе браузера.
 export function shortDate(iso: string | null, now: Date = new Date()): string {
   if (!iso) return "—";
   const d = new Date(iso.length === 10 ? `${iso}T00:00:00` : iso);
   if (Number.isNaN(d.getTime())) return iso;
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return d.toLocaleDateString("ru-RU", sameYear ? { day: "2-digit", month: "2-digit" } : undefined);
-}
-
-// Сколько дней до даты YYYY-MM-DD по календарю (0 — сегодня, отрицательное — прошла).
-export function daysUntil(day: string, now: Date = new Date()): number {
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
-  return Math.round((Date.parse(`${day}T00:00:00Z`) - today) / 86_400_000);
+  return (d.getFullYear() === now.getFullYear() ? DAY_MONTH : FULL_DATE).format(d);
 }
 
 export function lastPayment(c: CarOverview, now?: Date): Line {
@@ -69,10 +67,11 @@ export function lastInspection(c: CarOverview, now?: Date): Line {
   return { text: `был ${shortDate(c.last_inspection_at, now)}`, tone: "muted" };
 }
 
+// «Сегодня/завтра» — по календарю парка: inspection_days_left считает бэкенд.
 export function inspectionDue(c: CarOverview, now?: Date): Line {
-  if (!c.driver_id || !c.inspection_due_on) return { text: "не нужен: нет водителя", tone: "muted" };
+  const left = c.inspection_days_left;
+  if (!c.driver_id || !c.inspection_due_on || left == null) return { text: "не нужен: нет водителя", tone: "muted" };
   if (c.inspection_overdue_days > 0) return { text: `просрочен на ${c.inspection_overdue_days} дн.`, tone: "bad" };
-  const left = daysUntil(c.inspection_due_on, now);
   if (left <= 0) return { text: "нужно сделать сегодня", tone: "warn" };
   if (left === 1) return { text: "нужно сделать завтра", tone: "warn" };
   return { text: `следующий до ${shortDate(c.inspection_due_on, now)}`, tone: "ok" };

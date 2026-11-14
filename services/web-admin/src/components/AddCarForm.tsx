@@ -10,7 +10,10 @@ export default function AddCarForm({ onAdded }: { onAdded: () => void }) {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!plate.trim()) return;
+    if (!plate.trim()) {
+      setErr("Укажите гос. номер");
+      return;
+    }
     setBusy(true);
     setErr(null);
     try {
@@ -27,10 +30,18 @@ export default function AddCarForm({ onAdded }: { onAdded: () => void }) {
 
   return (
     <Card title="Добавить машину">
-      <form className="form-row" onSubmit={submit}>
-        <input placeholder="Гос. номер" value={plate} onChange={(e) => setPlate(e.target.value)} />
-        <input placeholder="Марка и модель (необязательно)" value={model} onChange={(e) => setModel(e.target.value)} />
-        <button disabled={busy}>{busy ? "…" : "Добавить"}</button>
+      <form className="form-grid" onSubmit={submit} noValidate>
+        <label>
+          Гос. номер
+          <input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="01KG123ABC" />
+        </label>
+        <label>
+          Марка и модель
+          <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="необязательно" />
+        </label>
+        <button type="submit" disabled={busy}>
+          {busy ? "…" : "Добавить"}
+        </button>
         {err && <span className="error">{err}</span>}
       </form>
       <p className="muted hint">Фото машины добавляется через бота (в вебе пока только текст).</p>

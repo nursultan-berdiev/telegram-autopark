@@ -41,6 +41,7 @@ class CarOverviewDTO(DTO):
     last_inspection_at: datetime | None = None
     inspection_due_on: date | None = None  # None — водителя нет, фотоконтроль не нужен
     inspection_overdue_days: int = 0
+    inspection_days_left: int | None = None  # до срока по часам парка; <0 — просрочен
     unpaid_fines: int = 0
     open_alerts: int = 0
 
