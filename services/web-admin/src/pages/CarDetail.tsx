@@ -238,7 +238,7 @@ export default function CarDetail() {
   return (
     <>
       <p>
-        <Link to="/cars">← К списку</Link>
+        <Link to="/">← К машинам</Link>
       </p>
       <h1>Машина {car.data?.plate ?? id}</h1>
 
@@ -264,7 +264,7 @@ export default function CarDetail() {
               confirm="Удалить машину? Доступно только для свободной машины без истории."
               danger
               onAction={() => api.del(`/cars/${id}`)}
-              onDone={() => navigate("/cars")}
+              onDone={() => navigate("/")}
             />
           </div>
         )}

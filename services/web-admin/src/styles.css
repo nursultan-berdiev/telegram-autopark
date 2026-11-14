@@ -16,6 +16,11 @@
   --sky: #0ea5e9;
   --lime: #84cc16;
   --on-accent: #ffffff; /* текст на залитых accent/danger кнопках и бейджах */
+  --warn-text: #b45309;
+  --ok-text: #15803d;
+  --on-brand: #ffffff; /* текст и иконки на градиентах и цветных бейджах */
+  --overlay: rgba(31, 35, 64, 0.45);
+  --drawer-shadow: 0 20px 50px -10px rgba(31, 35, 64, 0.35);
   --shadow: 0 10px 30px -12px rgba(39, 44, 94, 0.18);
   --z-dropdown: 50; /* выпадашки поверх залипающего топбара (z-index: 20) */
 }
@@ -38,6 +43,10 @@
   --sky: #38bdf8;
   --lime: #a3e635;
   --on-accent: #0b1220;
+  --warn-text: #fbbf24;
+  --ok-text: #4ade80;
+  --overlay: rgba(0, 0, 0, 0.6);
+  --drawer-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.6);
   --shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.55);
 }
 
@@ -69,7 +78,7 @@ a:hover { text-decoration: underline; }
 .brand .m {
   width: 34px; height: 34px; border-radius: 11px; flex: 0 0 auto;
   background: linear-gradient(135deg, var(--brand), var(--sky));
-  display: grid; place-items: center; color: #fff;
+  display: grid; place-items: center; color: var(--on-brand);
 }
 .sidebar .nav { display: flex; flex-direction: column; gap: 3px; }
 .sidebar nav a, .sidebar nav .nav-map {
@@ -108,7 +117,7 @@ a:hover { text-decoration: underline; }
 .av {
   width: 38px; height: 38px; border-radius: 50%; flex: 0 0 auto;
   background: linear-gradient(135deg, var(--teal), var(--sky));
-  display: grid; place-items: center; color: #fff; font-weight: 700;
+  display: grid; place-items: center; color: var(--on-brand); font-weight: 700;
 }
 .side-foot .av { width: 34px; height: 34px; }
 
@@ -155,7 +164,7 @@ a:hover { text-decoration: underline; }
 .iconbtn .dot {
   position: absolute; top: 4px; right: 4px; min-width: 16px; height: 16px;
   padding: 0 4px; border-radius: 8px; background: var(--rose); border: 2px solid var(--panel);
-  color: #fff; font-size: 10px; font-weight: 700; line-height: 1;
+  color: var(--on-brand); font-size: 10px; font-weight: 700; line-height: 1;
   display: grid; place-items: center;
 }
 .iconbtn .dot.err { background: var(--amber); } /* сбой загрузки алертов — не красный «есть N» */
@@ -174,13 +183,13 @@ a:hover { text-decoration: underline; }
 h1 { font-size: 22px; margin: 0 0 16px; }
 
 /* Мобильная шторка сайдбара */
-.scrim { display: none; position: fixed; inset: 0; background: rgba(31, 35, 64, 0.45); z-index: 30; }
+.scrim { display: none; position: fixed; inset: 0; background: var(--overlay); z-index: 30; }
 @media (max-width: 860px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar {
     position: fixed; left: 0; top: 0; width: 260px; height: 100vh; z-index: 40;
     transform: translateX(-100%); transition: transform 0.22s ease;
-    box-shadow: 0 20px 50px -10px rgba(31, 35, 64, 0.35);
+    box-shadow: var(--drawer-shadow);
   }
   .shell.nav-open .sidebar { transform: none; }
   .shell.nav-open .scrim { display: block; }
@@ -263,61 +272,62 @@ td.wrap { white-space: pre-wrap; max-width: 480px; }
 .radio { display: inline-flex; align-items: center; gap: 4px; color: var(--text); }
 select.field { height: 34px; }
 
-/* ===== Дашборд (вариант 5: мягкие карточки) ===== */
-.dash .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
-.dash .head h1 { font-size: 26px; font-weight: 800; margin: 0; letter-spacing: -0.4px; }
-.dash .head .u { color: var(--muted); font-size: 13px; }
-
-.dash .hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 20px; }
-.dash .sc {
-  border-radius: 18px; padding: 16px 18px; color: #fff;
-  box-shadow: var(--shadow); position: relative; overflow: hidden;
+/* ===== Главная: карточка на машину ===== */
+.cars-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.cars-head h1 { margin: 0; }
+.summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.chip {
+  display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  background: var(--soft); color: var(--text); border: 1px solid var(--border);
 }
-.dash .sc .ic { position: absolute; right: -6px; top: -6px; font-size: 58px; opacity: 0.18; }
-.dash .sc .n { font-size: 30px; font-weight: 800; line-height: 1; }
-.dash .sc .l { font-weight: 600; opacity: 0.95; margin-top: 8px; }
-.dash .sc .s { opacity: 0.85; font-size: 12.5px; margin-top: 3px; }
-.dash .sc.i { background: linear-gradient(135deg, #6366f1, #8b5cf6); }
-.dash .sc.t { background: linear-gradient(135deg, #0ea5e9, #14b8a6); }
-.dash .sc.a { background: linear-gradient(135deg, #f59e0b, #f97316); }
-.dash .sc.r { background: linear-gradient(135deg, #f43f5e, #fb7185); }
+a.chip:hover { text-decoration: none; border-color: var(--brand); }
+.chip.bad { background: color-mix(in srgb, var(--rose) 14%, transparent); color: var(--danger); border-color: transparent; }
+.chip.warn { background: color-mix(in srgb, var(--amber) 18%, transparent); color: var(--warn-text); border-color: transparent; }
 
-.dash .grid { display: grid; gap: 16px; }
-.dash .panel { background: var(--panel); border-radius: 18px; padding: 18px 20px; box-shadow: var(--shadow); }
-.dash .panel h2 { font-size: 15px; font-weight: 700; margin: 0 0 4px; }
-.dash .csub { color: var(--muted); font-size: 12.5px; margin-bottom: 12px; }
+.tone-bad { color: var(--danger); }
+.tone-warn { color: var(--warn-text); }
+.tone-ok { color: var(--ok-text); }
+.tone-muted { color: var(--muted); }
+.sub { font-size: 12.5px; }
 
-.dash .al { display: flex; gap: 12px; padding: 11px 0; border-bottom: 1px solid var(--border); align-items: flex-start; }
-.dash .al:last-child { border-bottom: 0; }
-.dash .al .ic {
-  width: 34px; height: 34px; border-radius: 11px; flex: 0 0 auto;
-  display: grid; place-items: center; font-size: 17px; font-weight: 800;
+.car-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.car-card {
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow);
 }
-.dash .al.critical .ic { background: rgba(244, 63, 94, 0.15); color: var(--rose); }
-.dash .al.warning .ic { background: rgba(245, 158, 11, 0.16); color: #d97706; }
-.dash .al.info .ic { background: rgba(14, 165, 233, 0.16); color: var(--sky); }
-.dash .al-body { flex: 1; min-width: 0; }
-.dash .al .t { font-weight: 600; line-height: 1.35; }
-.dash .al .c { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
-.dash .al .ago { color: var(--muted); font-size: 12px; white-space: nowrap; }
+/* Картинка абсолютом: иначе высокое фото растягивает блок поверх aspect-ratio. */
+.car-photo { display: block; position: relative; aspect-ratio: 16 / 10; background: var(--soft); overflow: hidden; }
+.car-photo-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+.car-photo-stub {
+  width: 100%; height: 100%; display: flex; flex-direction: column; gap: 6px;
+  align-items: center; justify-content: center; color: var(--muted); font-size: 13px;
+}
+.car-body { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px 16px; flex: 1; }
+.car-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.car-title { min-width: 0; }
+.car-plate { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 18px; letter-spacing: 0.3px; }
+.car-model { color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.car-badges { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.net { width: 9px; height: 9px; border-radius: 50%; background: var(--border); flex: 0 0 auto; }
+.net.on { background: var(--lime); }
+.car-facts { display: grid; grid-template-columns: 108px 1fr; gap: 7px 10px; margin: 0; font-size: 14px; }
+.car-facts dt { color: var(--muted); }
+.car-facts dd { margin: 0; min-width: 0; }
+.btn {
+  display: inline-block; padding: 7px 14px; border-radius: 10px; font-weight: 600;
+  background: var(--soft); color: var(--text); border: 1px solid var(--border);
+}
+.btn:hover { text-decoration: none; background: var(--brand-soft); color: var(--brand); border-color: transparent; }
+.car-more { margin-top: auto; align-self: flex-start; }
 
-.dash .fleet { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 4px; }
-.dash .fl { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 13px; }
-.dash .fl .st { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
-.dash .fl .st.free { background: var(--lime); }
-.dash .fl .st.idle { background: var(--sky); }
-.dash .fl-body { min-width: 0; }
-.dash .fl .p { font-weight: 700; }
-.dash .fl .mo { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dash .fl-right { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
-
-@media (max-width: 1040px) { .dash .hero { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) {
   /* Аватар дублирует подвал меню — на телефоне место нужнее строке поиска. */
   .topbar { gap: 8px; padding: 10px 16px; }
   .topbar > .av, .topbar .sp { display: none; }
-  .dash .hero { grid-template-columns: 1fr; }
-  .dash .fleet { grid-template-columns: 1fr; }
+  /* Сводка остаётся одной строкой — листается вбок, а не растёт вниз. */
+  .summary { flex-wrap: nowrap; overflow-x: auto; margin-right: -16px; padding-right: 16px; scrollbar-width: none; }
+  .car-grid { grid-template-columns: 1fr; }
   .searchbox { max-width: none; }
   .page { padding: 16px; }
 }

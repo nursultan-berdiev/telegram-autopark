@@ -17,6 +17,10 @@ export function resolveTheme(pref: ThemePref, systemDark: boolean): Theme {
 
 const systemQuery = () => window.matchMedia("(prefers-color-scheme: dark)");
 
+export function systemPrefersDark(): boolean {
+  return systemQuery().matches;
+}
+
 export function readPref(): ThemePref {
   try {
     return parsePref(localStorage.getItem(THEME_KEY));
@@ -35,7 +39,7 @@ export function savePref(pref: ThemePref): void {
 }
 
 export function applyTheme(pref: ThemePref): Theme {
-  const theme = resolveTheme(pref, systemQuery().matches);
+  const theme = resolveTheme(pref, systemPrefersDark());
   document.documentElement.dataset.theme = theme;
   return theme;
 }

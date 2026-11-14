@@ -8,11 +8,9 @@ import ThemeMenu from "./ThemeMenu";
 
 // Иконки — те же глифы, что в утверждённом макете (вариант 5).
 const NAV = [
-  { to: "/", label: "Дашборд", end: true, icon: "◱" },
-  { to: "/cars", label: "Автопарк", icon: "▦" },
+  { to: "/", label: "Машины", end: true, icon: "▦" },
   { to: "/drivers", label: "Водители", icon: "◍" },
   { to: "/announcements", label: "Объявления", icon: "◎" },
-  { to: "/photo-inspections", label: "Фотоконтроль", icon: "▣" },
   { to: "/assistant", label: "Ассистент", icon: "◈" },
   { to: "/reports", label: "Отчёты", icon: "▤" },
   { to: "/journals", label: "Журналы", icon: "≡" },
@@ -61,7 +59,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="brand">
           <span className="m">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11v5H5z" />
               <circle cx="7.5" cy="16" r="1.3" />
               <circle cx="16.5" cy="16" r="1.3" />

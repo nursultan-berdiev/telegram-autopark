@@ -20,7 +20,7 @@ export default function InspectionAlbum() {
   return (
     <>
       <p>
-        <Link to="/photo-inspections">← К фотоконтролю</Link>
+        <Link to={insp.data?.car_id ? `/cars/${insp.data.car_id}?tab=photo` : "/"}>← К машине</Link>
       </p>
       <h1>Осмотр №{id}</h1>
       <Async loading={insp.loading} error={insp.error} data={insp.data}>
