@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Car, Driver, Payment, PaymentStatus
@@ -81,8 +81,8 @@ async def list_payments_by_driver(
     return list(result.all())
 
 
-def _moment():
-    # Когда оплатили: дата из чека, а без неё — время приёма чека ботом.
+def _paid_moment() -> ColumnElement[datetime]:
+    """Когда оплатили: дата из чека, а без неё — время приёма чека ботом."""
     return func.coalesce(Payment.paid_at, Payment.created_at)
 
 
@@ -94,7 +94,7 @@ async def list_payments_by_car(
         select(Payment, Driver.full_name)
         .join(Driver, Driver.id == Payment.driver_id, isouter=True)
         .where(Payment.car_id == car_id)
-        .order_by(_moment().desc(), Payment.id.desc())
+        .order_by(_paid_moment().desc(), Payment.id.desc())
         .limit(limit)
     )
     return [(payment, name) for payment, name in rows.all()]
@@ -106,7 +106,7 @@ async def last_by_car(session: AsyncSession) -> dict[int, Payment]:
         select(
             Payment.id,
             func.row_number()
-            .over(partition_by=Payment.car_id, order_by=(_moment().desc(), Payment.id.desc()))
+            .over(partition_by=Payment.car_id, order_by=(_paid_moment().desc(), Payment.id.desc()))
             .label("rn"),
         )
         .where(Payment.car_id.is_not(None))

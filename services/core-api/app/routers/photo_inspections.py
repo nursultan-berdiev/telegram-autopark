@@ -11,8 +11,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_core, tg_user_id
-from app.db.models import Car
 from app.db.session import get_session
+from app.domain import cars as cars_service
 from app.domain import photo_inspections as photo_service
 from app.domain.photo_inspections import InspectionView, PhotoStatus
 from app.errors import NotFound
@@ -152,7 +152,7 @@ async def car_inspections(
     _: str = Depends(require_core),
 ) -> list[PhotoInspectionDTO]:
     """Осмотры машины от любого водителя, свежие первыми (limit 1..200)."""
-    if await session.get(Car, car_id) is None:
+    if await cars_service.get_car(session, car_id) is None:
         raise NotFound(f"машина {car_id} не найдена")
     rows = await photo_service.list_inspections_by_car(session, car_id, limit=limit)
     return [_dto(view) for view in rows]

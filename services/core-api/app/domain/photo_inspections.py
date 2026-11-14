@@ -447,3 +447,17 @@ async def list_inspections_by_car(
         .limit(limit)
     )
     return [InspectionView(*row) for row in rows.all()]
+
+
+async def last_by_car(session: AsyncSession) -> dict[int, datetime]:
+    """Когда был последний осмотр каждой машины — от любого водителя.
+
+    Не last_inspection_at из statuses(): тот считает по водителю, и машина с новым
+    водителем выглядела бы так, будто её ни разу не осматривали.
+    """
+    rows = await session.execute(
+        select(PhotoInspection.car_id, func.max(PhotoInspection.created_at))
+        .where(PhotoInspection.car_id.is_not(None))
+        .group_by(PhotoInspection.car_id)
+    )
+    return {car_id: at for car_id, at in rows.all()}

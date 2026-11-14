@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import (
@@ -21,10 +21,10 @@ from app.db.models import (
     Fine,
     FineStatus,
     Payment,
-    PhotoInspection,
 )
 from app.domain import cars as cars_domain
 from app.domain import commands as commands_domain
+from app.domain import drivers as drivers_domain
 from app.domain import payments as payments_domain
 from app.domain import photo_inspections as photo_domain
 from app.domain import reports as reports_domain
@@ -33,6 +33,8 @@ from app.domain import telemetry as telemetry_domain
 
 @dataclass
 class CarCard:
+    """Всё о машине для её карточки на главной; None — данных нет."""
+
     car: Car
     driver: Driver | None
     last_payment: Payment | None
@@ -46,7 +48,10 @@ class CarCard:
     open_alerts: int
 
 
-async def _count_by_car(session: AsyncSession, model, condition) -> dict[int, int]:
+async def _count_by_car(
+    session: AsyncSession, model: type[Fine] | type[Alert], condition: ColumnElement[bool]
+) -> dict[int, int]:
+    """Сколько строк `model` с условием у каждой машины — одним GROUP BY."""
     rows = await session.execute(
         select(model.car_id, func.count()).where(condition).group_by(model.car_id)
     )
@@ -54,28 +59,16 @@ async def _count_by_car(session: AsyncSession, model, condition) -> dict[int, in
 
 
 async def cards(session: AsyncSession, now: datetime) -> list[CarCard]:
+    """Карточки всех машин парка в порядке добавления машин."""
     cars = await cars_domain.list_cars(session)
-    drivers = {
-        d.car_id: d
-        for d in await session.scalars(
-            select(Driver).where(Driver.car_id.is_not(None), Driver.active.is_(True))
-        )
-    }
+    drivers = await drivers_domain.active_by_car(session)
     # График и фотоконтроль привязаны к водителю: берём их у того, кто за рулём сейчас.
     schedules = {i.driver_id: i for i in await reports_domain.upcoming_payments(session, now)}
     photo = {s.driver_id: s for s in await photo_domain.statuses(session, now)}
     last_payments = await payments_domain.last_by_car(session)
     states = await telemetry_domain.list_states(session)
     blocks = {c.car_id: c for c in await commands_domain.cars_under_block(session)}
-    last_inspections = dict(
-        (
-            await session.execute(
-                select(PhotoInspection.car_id, func.max(PhotoInspection.created_at))
-                .where(PhotoInspection.car_id.is_not(None))
-                .group_by(PhotoInspection.car_id)
-            )
-        ).all()
-    )
+    last_inspections = await photo_domain.last_by_car(session)
     fines = await _count_by_car(session, Fine, Fine.status == FineStatus.unpaid)
     alerts = await _count_by_car(session, Alert, Alert.status == AlertStatus.open)
 

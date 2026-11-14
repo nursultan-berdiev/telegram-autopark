@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_core
 from app.clients import ai_gateway
 from app.clients.ai_gateway import RecognizedReceipt
-from app.db.models import Car, Payment
+from app.db.models import Payment
 from app.db.session import get_session
+from app.domain import cars as cars_service
 from app.domain import drivers as drivers_service
 from app.domain import payments as pay
 from app.domain import schedules as sched
@@ -34,8 +35,8 @@ def _utc(dt: datetime | None) -> datetime | None:
     return dt
 
 
-def _payment_dto(payment: Payment) -> PaymentDTO:
-    return PaymentDTO(
+def _payment_dto(payment: Payment, dto: type[PaymentDTO] = PaymentDTO, **extra) -> PaymentDTO:
+    return dto(
         id=payment.id,
         driver_id=payment.driver_id,
         car_id=payment.car_id,
@@ -46,6 +47,7 @@ def _payment_dto(payment: Payment) -> PaymentDTO:
         receipt_kind=payment.receipt_kind,
         status=payment.status.value,
         created_at=_utc(payment.created_at),
+        **extra,
     )
 
 
@@ -153,10 +155,7 @@ async def list_car_payments(
     _: str = Depends(require_core),
 ) -> list[CarPaymentDTO]:
     """Оплаты по машине от любого водителя, свежие первыми (limit 1..500)."""
-    if await session.get(Car, car_id) is None:
+    if await cars_service.get_car(session, car_id) is None:
         raise NotFound(f"машина {car_id} не найдена")
     rows = await pay.list_payments_by_car(session, car_id, limit=limit)
-    return [
-        CarPaymentDTO(**_payment_dto(payment).model_dump(), driver_name=name)
-        for payment, name in rows
-    ]
+    return [_payment_dto(payment, CarPaymentDTO, driver_name=name) for payment, name in rows]

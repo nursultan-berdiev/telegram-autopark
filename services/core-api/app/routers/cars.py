@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
@@ -20,6 +21,7 @@ from app.db.models import (
 from app.db.session import get_session
 from app.domain import car_overview
 from app.domain import cars as cars_service
+from app.domain import drivers as drivers_service
 from app.errors import Conflict, NotFound
 from contracts import CarCreate, CarDTO, CarOverviewDTO
 
@@ -31,16 +33,6 @@ def _utc(dt: datetime | None) -> datetime | None:
     if dt is not None and dt.tzinfo is None:
         return dt.replace(tzinfo=timezone.utc)
     return dt
-
-
-async def _drivers_by_car(session: AsyncSession, car_ids: list[int]) -> dict[int, Driver]:
-    # domain.cars не грузит Car.driver — достаём активных водителей одним запросом.
-    if not car_ids:
-        return {}
-    rows = await session.scalars(
-        select(Driver).where(Driver.car_id.in_(car_ids), Driver.active.is_(True))
-    )
-    return {d.car_id: d for d in rows}
 
 
 def _car_dto(car: Car, driver: Driver | None) -> CarDTO:
@@ -68,11 +60,12 @@ async def list_cars(
         if free
         else await cars_service.list_cars(session)
     )
-    drivers = await _drivers_by_car(session, [c.id for c in cars])
+    drivers = await drivers_service.active_by_car(session, [c.id for c in cars])
     return [_car_dto(c, drivers.get(c.id)) for c in cars]
 
 
 def _overview_dto(card: car_overview.CarCard) -> CarOverviewDTO:
+    """Карточка домена → DTO; время приводим к UTC, как во всех ответах API."""
     car, driver, paid, schedule = card.car, card.driver, card.last_payment, card.schedule
     return CarOverviewDTO(
         id=car.id,
@@ -86,7 +79,7 @@ def _overview_dto(card: car_overview.CarCard) -> CarOverviewDTO:
         last_payment_amount=paid.amount if paid else None,
         next_payment_due=_utc(schedule.next_due) if schedule else None,
         payment_overdue_days=schedule.overdue_days if schedule else 0,
-        payment_debt=schedule.debt_now if schedule else 0,
+        payment_debt=schedule.debt_now if schedule else Decimal(0),
         online=card.online,
         engine_blocked=bool(card.state and card.state.engine_blocked),
         block_status=card.block.status.value if card.block else None,
@@ -99,6 +92,7 @@ def _overview_dto(card: car_overview.CarCard) -> CarOverviewDTO:
     )
 
 
+# Регистрируется выше /{car_id}: иначе «overview» попал бы в car_id и дал 422.
 @router.get("/overview", response_model=list[CarOverviewDTO])
 async def overview(
     session: AsyncSession = Depends(get_session),
@@ -137,10 +131,8 @@ async def get_car(
     car = await cars_service.get_car(session, car_id)
     if car is None:
         raise NotFound(f"машина {car_id} не найдена")
-    driver = await session.scalar(
-        select(Driver).where(Driver.car_id == car.id, Driver.active.is_(True))
-    )
-    return _car_dto(car, driver)
+    drivers = await drivers_service.active_by_car(session, [car.id])
+    return _car_dto(car, drivers.get(car.id))
 
 
 async def _history_counters(session: AsyncSession, car_id: int) -> dict[str, int]:

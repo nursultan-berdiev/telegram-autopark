@@ -31,6 +31,22 @@ async def get_driver(session: AsyncSession, driver_id: int) -> Driver | None:
     )
 
 
+async def active_by_car(
+    session: AsyncSession, car_ids: list[int] | None = None
+) -> dict[int, Driver]:
+    """Работающий водитель каждой машины; car_ids=None — весь парк.
+
+    Больше одного на машину не бывает: это держит частичный уникальный индекс
+    uq_driver_active_car (active AND car_id IS NOT NULL).
+    """
+    query = select(Driver).where(Driver.car_id.is_not(None), Driver.active.is_(True))
+    if car_ids is not None:
+        if not car_ids:
+            return {}
+        query = query.where(Driver.car_id.in_(car_ids))
+    return {driver.car_id: driver for driver in await session.scalars(query)}
+
+
 async def list_drivers(session: AsyncSession, *, active: bool = True) -> list[Driver]:
     """Список водителей: работающие (active=True) или уволенные (active=False)."""
     result = await session.scalars(
