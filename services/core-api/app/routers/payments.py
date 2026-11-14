@@ -9,8 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_core
 from app.clients import ai_gateway
 from app.clients.ai_gateway import RecognizedReceipt
-from app.db.models import Car, Payment
+from app.db.models import Payment
 from app.db.session import get_session
+from app.domain import cars as cars_service
 from app.domain import drivers as drivers_service
 from app.domain import payments as pay
 from app.domain import schedules as sched
@@ -34,19 +35,29 @@ def _utc(dt: datetime | None) -> datetime | None:
     return dt
 
 
+def _payment_fields(payment: Payment) -> dict[str, object]:
+    """Поля PaymentDTO из модели — одно место для PaymentDTO и CarPaymentDTO."""
+    return {
+        "id": payment.id,
+        "driver_id": payment.driver_id,
+        "car_id": payment.car_id,
+        "amount": payment.amount,
+        "paid_at": _utc(payment.paid_at),
+        "receipt_file_id": payment.receipt_file_id,
+        "receipt_path": payment.receipt_path,
+        "receipt_kind": payment.receipt_kind,
+        "status": payment.status.value,
+        "created_at": _utc(payment.created_at),
+    }
+
+
 def _payment_dto(payment: Payment) -> PaymentDTO:
-    return PaymentDTO(
-        id=payment.id,
-        driver_id=payment.driver_id,
-        car_id=payment.car_id,
-        amount=payment.amount,
-        paid_at=_utc(payment.paid_at),
-        receipt_file_id=payment.receipt_file_id,
-        receipt_path=payment.receipt_path,
-        receipt_kind=payment.receipt_kind,
-        status=payment.status.value,
-        created_at=_utc(payment.created_at),
-    )
+    return PaymentDTO(**_payment_fields(payment))
+
+
+def _car_payment_dto(payment: Payment, driver_name: str | None) -> CarPaymentDTO:
+    """Оплата в истории машины: поля оплаты плюс имя водителя, который платил."""
+    return CarPaymentDTO(**_payment_fields(payment), driver_name=driver_name)
 
 
 def _to_recognized(dto: RecognizedReceiptDTO | None) -> RecognizedReceipt:
@@ -153,10 +164,7 @@ async def list_car_payments(
     _: str = Depends(require_core),
 ) -> list[CarPaymentDTO]:
     """Оплаты по машине от любого водителя, свежие первыми (limit 1..500)."""
-    if await session.get(Car, car_id) is None:
+    if await cars_service.get_car(session, car_id) is None:
         raise NotFound(f"машина {car_id} не найдена")
     rows = await pay.list_payments_by_car(session, car_id, limit=limit)
-    return [
-        CarPaymentDTO(**_payment_dto(payment).model_dump(), driver_name=name)
-        for payment, name in rows
-    ]
+    return [_car_payment_dto(payment, name) for payment, name in rows]

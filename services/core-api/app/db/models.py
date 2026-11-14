@@ -178,7 +178,7 @@ class Payment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id", ondelete="CASCADE"))
     car_id: Mapped[int | None] = mapped_column(
-        ForeignKey("cars.id", ondelete="SET NULL"), nullable=True
+        ForeignKey("cars.id", ondelete="SET NULL"), index=True, nullable=True
     )
     amount: Mapped[float] = mapped_column(Numeric(12, 2))
     paid_at: Mapped[datetime | None] = mapped_column(
@@ -821,7 +821,10 @@ class PhotoInspection(Base):
     """
 
     __tablename__ = "photo_inspections"
-    __table_args__ = (Index("ix_photo_inspections_driver_created", "driver_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_photo_inspections_driver_created", "driver_id", "created_at"),
+        Index("ix_photo_inspections_car_created", "car_id", "created_at"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     driver_id: Mapped[int] = mapped_column(ForeignKey("drivers.id", ondelete="CASCADE"))
