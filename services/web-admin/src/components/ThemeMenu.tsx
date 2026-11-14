@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { applyTheme, onSystemThemeChange, readPref, savePref, type Theme, type ThemePref } from "../lib/theme";
+import {
+  applyTheme,
+  onSystemThemeChange,
+  readPref,
+  resolveTheme,
+  savePref,
+  systemPrefersDark,
+  type Theme,
+  type ThemePref,
+} from "../lib/theme";
 
 const OPTIONS: { key: ThemePref; label: string }[] = [
   { key: "light", label: "Светлая" },
@@ -9,7 +18,8 @@ const OPTIONS: { key: ThemePref; label: string }[] = [
 
 export default function ThemeMenu() {
   const [pref, setPref] = useState<ThemePref>(readPref);
-  const [theme, setTheme] = useState<Theme>(() => applyTheme(pref));
+  // В DOM пишет только эффект: до него атрибут уже выставил inline-скрипт index.html.
+  const [theme, setTheme] = useState<Theme>(() => resolveTheme(pref, systemPrefersDark()));
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
 
@@ -42,9 +52,9 @@ export default function ThemeMenu() {
   return (
     <div className="theme-menu" ref={box}>
       <button
+        type="button"
         className="iconbtn"
         aria-label="Тема оформления"
-        aria-haspopup="menu"
         aria-expanded={open}
         title={theme === "dark" ? "Тема: тёмная" : "Тема: светлая"}
         onClick={() => setOpen((o) => !o)}
@@ -61,12 +71,12 @@ export default function ThemeMenu() {
         )}
       </button>
       {open && (
-        <div className="menu" role="menu">
+        <div className="menu" role="group" aria-label="Тема оформления">
           {OPTIONS.map((o) => (
             <button
               key={o.key}
-              role="menuitemradio"
-              aria-checked={pref === o.key}
+              type="button"
+              aria-pressed={pref === o.key}
               className={pref === o.key ? "on" : ""}
               onClick={() => choose(o.key)}
             >

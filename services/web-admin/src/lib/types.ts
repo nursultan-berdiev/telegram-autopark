@@ -15,6 +15,31 @@ export interface Car {
   created_at: string | null;
 }
 
+// GET /cars/overview — карточка машины на главной (contracts.CarOverviewDTO).
+export interface CarOverview {
+  id: number;
+  plate: string;
+  model: string | null;
+  status: string;
+  has_photo: boolean;
+  driver_id: number | null;
+  driver_name: string | null;
+  last_payment_at: string | null;
+  last_payment_amount: string | null; // Decimal приходит строкой
+  next_payment_due: string | null;
+  payment_overdue_days: number;
+  payment_debt: string;
+  online: boolean;
+  engine_blocked: boolean;
+  block_status: string | null;
+  block_source: string | null;
+  last_inspection_at: string | null;
+  inspection_due_on: string | null; // YYYY-MM-DD, день по часам парка
+  inspection_overdue_days: number;
+  unpaid_fines: number;
+  open_alerts: number;
+}
+
 export interface Driver {
   id: number;
   tg_user_id: number;

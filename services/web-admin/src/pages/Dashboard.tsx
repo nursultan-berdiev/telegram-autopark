@@ -1,157 +1,141 @@
+import { useState } from "react";
+import { Link } from "react-router-dom";
 import { useApi } from "../lib/hooks";
 import { Async } from "../components/ui";
-import type { Alert, Car, Driver } from "../lib/types";
+import { MediaImage } from "../components/Media";
+import AddCarForm from "../components/AddCarForm";
+import {
+  engine,
+  inspectionDue,
+  isBlocked,
+  lastInspection,
+  lastPayment,
+  paymentDue,
+  type Line,
+} from "../lib/carStatus";
+import type { CarOverview } from "../lib/types";
 
-// Градиентная карточка-счётчик (hero).
-function HeroCard({
-  tone,
-  icon,
-  value,
-  label,
-  sub,
-  loading,
-}: {
-  tone: "i" | "t" | "a" | "r";
-  icon: string;
-  value?: number;
-  label: string;
-  sub?: string;
-  loading: boolean;
-}) {
+function Tone({ line, sub }: { line: Line | null; sub?: boolean }) {
+  if (!line) return null;
+  return <div className={`tone-${line.tone}${sub ? " sub" : ""}`}>{line.text}</div>;
+}
+
+function PhotoStub({ plate }: { plate: string }) {
   return (
-    <div className={`sc ${tone}`}>
-      <div className="ic" aria-hidden>
-        {icon}
-      </div>
-      <div className="n">{loading ? "…" : (value ?? "—")}</div>
-      <div className="l">{label}</div>
-      {sub && <div className="s">{sub}</div>}
+    <div className="car-photo-stub" aria-label={`Фото ${plate} нет`}>
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5 11l1.5-4.5A2 2 0 0 1 8.4 5h7.2a2 2 0 0 1 1.9 1.5L19 11v5H5z" />
+        <circle cx="7.5" cy="16" r="1.3" />
+        <circle cx="16.5" cy="16" r="1.3" />
+      </svg>
+      <span>Фото нет</span>
     </div>
   );
 }
 
-function alertText(a: Alert): string {
-  const t = a.payload && typeof a.payload.text === "string" ? a.payload.text : "";
-  return t || a.type;
+function CarCard({ c }: { c: CarOverview }) {
+  return (
+    <article className="car-card">
+      <Link to={`/cars/${c.id}`} className="car-photo" tabIndex={-1}>
+        {c.has_photo ? (
+          <MediaImage kind="car-photo" refId={c.id} alt={`Фото ${c.plate}`} className="car-photo-img" fallback={<PhotoStub plate={c.plate} />} />
+        ) : (
+          <PhotoStub plate={c.plate} />
+        )}
+      </Link>
+      <div className="car-body">
+        <div className="car-head">
+          <div className="car-title">
+            <div className="car-plate">
+              <span className={`net${c.online ? " on" : ""}`} title={c.online ? "Трекер на связи" : "Трекер не на связи"} />
+              {c.plate}
+            </div>
+            <div className="car-model">{c.model ?? "марка не указана"}</div>
+          </div>
+          <div className="car-badges">
+            {c.unpaid_fines > 0 && <span className="chip bad">Штрафы: {c.unpaid_fines}</span>}
+            {c.open_alerts > 0 && <span className="chip warn">Алерты: {c.open_alerts}</span>}
+          </div>
+        </div>
+        <dl className="car-facts">
+          <dt>Водитель</dt>
+          <dd>{c.driver_id ? <Link to={`/drivers/${c.driver_id}`}>{c.driver_name}</Link> : <span className="tone-muted">свободна</span>}</dd>
+          <dt>Оплата</dt>
+          <dd>
+            <Tone line={lastPayment(c)} />
+            <Tone line={paymentDue(c)} sub />
+          </dd>
+          <dt>Двигатель</dt>
+          <dd>
+            <Tone line={engine(c)} />
+          </dd>
+          <dt>Фотоконтроль</dt>
+          <dd>
+            <Tone line={lastInspection(c)} />
+            <Tone line={inspectionDue(c)} sub />
+          </dd>
+        </dl>
+        <Link className="btn car-more" to={`/cars/${c.id}`}>
+          Подробнее
+        </Link>
+      </div>
+    </article>
+  );
 }
 
-// critical/error/warning → «!», info → «i»; класс для цветной плашки.
-function sevClass(sev: string): "critical" | "warning" | "info" {
-  if (sev === "warning") return "warning";
-  if (sev === "info") return "info";
-  return "critical";
-}
-
-// Короткое «сколько назад» без внешних библиотек.
-function ago(iso: string | null): string {
-  if (!iso) return "";
-  const t = new Date(iso).getTime();
-  if (Number.isNaN(t)) return "";
-  const m = Math.floor(Math.max(0, Date.now() - t) / 60000);
-  if (m < 1) return "только что";
-  if (m < 60) return `${m} мин`;
-  const h = Math.floor(m / 60);
-  if (h < 24) return `${h} ч`;
-  return `${Math.floor(h / 24)} дн`;
+// Узкая строка над карточками: сколько машин и что требует внимания.
+function Summary({ cars }: { cars: CarOverview[] }) {
+  const free = cars.filter((c) => !c.driver_id).length;
+  const blocked = cars.filter(isBlocked).length;
+  const latePay = cars.filter((c) => c.payment_overdue_days > 0).length;
+  const lateFoto = cars.filter((c) => c.inspection_overdue_days > 0).length;
+  const fines = cars.reduce((n, c) => n + c.unpaid_fines, 0);
+  const alerts = cars.reduce((n, c) => n + c.open_alerts, 0);
+  return (
+    <div className="summary">
+      <span className="chip">Машин: {cars.length}</span>
+      <span className="chip">Свободных: {free}</span>
+      <span className={`chip${blocked ? " bad" : ""}`}>Заблокировано: {blocked}</span>
+      <span className={`chip${latePay ? " bad" : ""}`}>Просрочка оплаты: {latePay}</span>
+      <span className={`chip${lateFoto ? " warn" : ""}`}>Фотоконтроль просрочен: {lateFoto}</span>
+      <span className={`chip${fines ? " bad" : ""}`}>Неоплаченных штрафов: {fines}</span>
+      <Link className={`chip${alerts ? " warn" : ""}`} to="/journals?tab=alerts">
+        Открытых алертов: {alerts}
+      </Link>
+    </div>
+  );
 }
 
 export default function Dashboard() {
-  const cars = useApi<Car[]>("/cars");
-  const drivers = useApi<Driver[]>("/drivers?active=true");
-  const alerts = useApi<Alert[]>("/alerts?status=open");
-
-  const carList = cars.data ?? [];
-  const free = carList.filter((c) => c.status === "free").length;
-  const occupied = carList.length - free;
-  const atWheel = (drivers.data ?? []).filter((d) => d.car_id != null).length;
-  const alertRows = alerts.data ?? [];
-  const crit = alertRows.filter((a) => sevClass(a.severity) === "critical").length;
-  const warn = alertRows.filter((a) => sevClass(a.severity) === "warning").length;
-
-  const plateOf = (carId: number) => carList.find((c) => c.id === carId)?.plate ?? `#${carId}`;
-
-  const updated = new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const overview = useApi<CarOverview[]>("/cars/overview");
+  const [adding, setAdding] = useState(false);
 
   return (
-    <div className="dash">
-      <div className="head">
-        <h1>Дашборд</h1>
-        <div className="u">Обновлено {updated}</div>
+    <>
+      <div className="cars-head">
+        <h1>Машины</h1>
+        <button onClick={() => setAdding((a) => !a)}>{adding ? "Скрыть" : "+ Добавить машину"}</button>
       </div>
-
-      <section className="hero">
-        <HeroCard
-          tone="i"
-          icon="▦"
-          value={cars.data?.length}
-          label="Машины"
-          sub={cars.data ? `${occupied} заняты · ${free} свободны` : undefined}
-          loading={cars.loading}
+      {adding && (
+        <AddCarForm
+          onAdded={() => {
+            setAdding(false);
+            overview.reload();
+          }}
         />
-        <HeroCard
-          tone="t"
-          icon="●"
-          value={drivers.data?.length}
-          label="Активные водители"
-          sub={drivers.data ? `${atWheel} за рулём` : undefined}
-          loading={drivers.loading}
-        />
-        <HeroCard
-          tone="r"
-          icon="⚠"
-          value={alerts.data?.length}
-          label="Открытые алерты"
-          sub={alerts.data ? `${crit} критичных · ${warn} внимание` : undefined}
-          loading={alerts.loading}
-        />
-      </section>
-
-      <div className="grid">
-        <section className="panel">
-          <h2>Открытые алерты</h2>
-          <div className="csub">Требуют внимания прямо сейчас</div>
-          <Async loading={alerts.loading} error={alerts.error} data={alerts.data} empty="Алертов нет">
-            {(rows) => (
-              <div>
-                {rows.slice(0, 10).map((a) => (
-                  <div className={`al ${sevClass(a.severity)}`} key={a.id}>
-                    <div className="ic">{sevClass(a.severity) === "info" ? "i" : "!"}</div>
-                    <div className="al-body">
-                      <div className="t">{alertText(a)}</div>
-                      <div className="c">{plateOf(a.car_id)}</div>
-                    </div>
-                    <div className="ago">{ago(a.triggered_at)}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Async>
-        </section>
-
-        <section className="panel">
-          <h2>Парк сейчас</h2>
-          <div className="csub">Статус по каждой машине</div>
-          <Async loading={cars.loading} error={cars.error} data={cars.data} empty="Машин нет">
-            {(rows) => (
-              <div className="fleet">
-                {rows.map((c) => (
-                  <div className="fl" key={c.id}>
-                    <span className={`st ${c.status === "free" ? "free" : "idle"}`} />
-                    <div className="fl-body">
-                      <div className="p">{c.plate}</div>
-                      <div className="mo">
-                        {c.model ?? "—"}
-                        {c.driver_name ? ` · ${c.driver_name}` : ""}
-                      </div>
-                    </div>
-                    <div className="fl-right">{c.status === "free" ? "свободна" : "занята"}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Async>
-        </section>
-      </div>
-    </div>
+      )}
+      <Async loading={overview.loading} error={overview.error} data={overview.data} empty="Машин пока нет">
+        {(cars) => (
+          <>
+            <Summary cars={cars} />
+            <div className="car-grid">
+              {cars.map((c) => (
+                <CarCard key={c.id} c={c} />
+              ))}
+            </div>
+          </>
+        )}
+      </Async>
+    </>
   );
 }
