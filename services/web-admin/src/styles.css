@@ -313,6 +313,9 @@ select.field { height: 34px; }
 
 @media (max-width: 1040px) { .dash .hero { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) {
+  /* Аватар дублирует подвал меню — на телефоне место нужнее строке поиска. */
+  .topbar { gap: 8px; padding: 10px 16px; }
+  .topbar > .av { display: none; }
   .dash .hero { grid-template-columns: 1fr; }
   .dash .fleet { grid-template-columns: 1fr; }
   .searchbox { max-width: none; }
