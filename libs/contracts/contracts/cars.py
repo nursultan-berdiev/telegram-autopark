@@ -1,7 +1,7 @@
 """DTO машин и их состояния."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from .common import DTO
@@ -17,6 +17,32 @@ class CarDTO(DTO):
     created_at: datetime | None = None
     driver_id: int | None = None
     driver_name: str | None = None
+
+
+class CarOverviewDTO(DTO):
+    """Карточка машины на главной админки: всё, что видно без перехода в машину."""
+
+    id: int
+    plate: str
+    model: str | None = None
+    status: str
+    has_photo: bool = False
+    driver_id: int | None = None
+    driver_name: str | None = None
+    last_payment_at: datetime | None = None  # дата из чека, а если её нет — время приёма
+    last_payment_amount: Decimal | None = None
+    next_payment_due: datetime | None = None  # None — у водителя нет графика
+    payment_overdue_days: int = 0
+    payment_debt: Decimal = Decimal(0)
+    online: bool = False
+    engine_blocked: bool = False  # по телеметрии трекера
+    block_status: str | None = None  # действующая команда блокировки, если есть
+    block_source: str | None = None  # manual / overdue / fines / photo
+    last_inspection_at: datetime | None = None
+    inspection_due_on: date | None = None  # None — водителя нет, фотоконтроль не нужен
+    inspection_overdue_days: int = 0
+    unpaid_fines: int = 0
+    open_alerts: int = 0
 
 
 class CarCreate(DTO):

@@ -3,20 +3,26 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, UploadFile
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_core
 from app.clients import ai_gateway
 from app.clients.ai_gateway import RecognizedReceipt
-from app.db.models import Payment
+from app.db.models import Car, Payment
 from app.db.session import get_session
 from app.domain import drivers as drivers_service
 from app.domain import payments as pay
 from app.domain import schedules as sched
 from app.errors import Conflict, DomainError, NotFound
 from app.storage import media_type_for
-from contracts import PaymentCreate, PaymentDTO, PaymentResult, RecognizedReceiptDTO
+from contracts import (
+    CarPaymentDTO,
+    PaymentCreate,
+    PaymentDTO,
+    PaymentResult,
+    RecognizedReceiptDTO,
+)
 
 router = APIRouter()
 
@@ -137,3 +143,20 @@ async def list_driver_payments(
 ) -> list[PaymentDTO]:
     payments = await pay.list_payments_by_driver(session, driver_id)
     return [_payment_dto(p) for p in payments]
+
+
+@router.get("/cars/{car_id}/payments", response_model=list[CarPaymentDTO])
+async def list_car_payments(
+    car_id: int,
+    limit: int = Query(default=50, ge=1, le=500),
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> list[CarPaymentDTO]:
+    """Оплаты по машине от любого водителя, свежие первыми (limit 1..500)."""
+    if await session.get(Car, car_id) is None:
+        raise NotFound(f"машина {car_id} не найдена")
+    rows = await pay.list_payments_by_car(session, car_id, limit=limit)
+    return [
+        CarPaymentDTO(**_payment_dto(payment).model_dump(), driver_name=name)
+        for payment, name in rows
+    ]

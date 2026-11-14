@@ -18,9 +18,10 @@ from app.db.models import (
     Telemetry,
 )
 from app.db.session import get_session
+from app.domain import car_overview
 from app.domain import cars as cars_service
 from app.errors import Conflict, NotFound
-from contracts import CarCreate, CarDTO
+from contracts import CarCreate, CarDTO, CarOverviewDTO
 
 router = APIRouter()
 
@@ -69,6 +70,43 @@ async def list_cars(
     )
     drivers = await _drivers_by_car(session, [c.id for c in cars])
     return [_car_dto(c, drivers.get(c.id)) for c in cars]
+
+
+def _overview_dto(card: car_overview.CarCard) -> CarOverviewDTO:
+    car, driver, paid, schedule = card.car, card.driver, card.last_payment, card.schedule
+    return CarOverviewDTO(
+        id=car.id,
+        plate=car.plate,
+        model=car.model,
+        status=car.status.value,
+        has_photo=bool(car.photo_file_id),
+        driver_id=driver.id if driver else None,
+        driver_name=driver.full_name if driver else None,
+        last_payment_at=_utc(paid.paid_at or paid.created_at) if paid else None,
+        last_payment_amount=paid.amount if paid else None,
+        next_payment_due=_utc(schedule.next_due) if schedule else None,
+        payment_overdue_days=schedule.overdue_days if schedule else 0,
+        payment_debt=schedule.debt_now if schedule else 0,
+        online=card.online,
+        engine_blocked=bool(card.state and card.state.engine_blocked),
+        block_status=card.block.status.value if card.block else None,
+        block_source=card.block.source if card.block else None,
+        last_inspection_at=_utc(card.last_inspection_at),
+        inspection_due_on=card.photo.next_due_on if card.photo else None,
+        inspection_overdue_days=card.photo.overdue_days if card.photo else 0,
+        unpaid_fines=card.unpaid_fines,
+        open_alerts=card.open_alerts,
+    )
+
+
+@router.get("/overview", response_model=list[CarOverviewDTO])
+async def overview(
+    session: AsyncSession = Depends(get_session),
+    _: str = Depends(require_core),
+) -> list[CarOverviewDTO]:
+    """Главная админки: по карточке на машину одним запросом."""
+    cards = await car_overview.cards(session, datetime.now(timezone.utc))
+    return [_overview_dto(card) for card in cards]
 
 
 @router.post("", response_model=CarDTO, status_code=201)
